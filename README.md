@@ -33,7 +33,7 @@ npm install notify-worker-sdk
 
 ## Configuration Options
 
-The SDK is configured using a single options object defined by the `RunBatchNotificationOptions<T>` interface. Below are the available options with their defaults:
+The SDK is configured using a single options object defined by the `DispatchNotificationOptions<T>` interface. Below are the available options with their defaults:
 
 - **`redisInstance: Redis`**  
   _Required._ Externally initialized Redis instance.

@@ -15,7 +15,10 @@ export { BaseJob } from "./jobs/BaseJob";
 export { NotificationJob } from "./jobs/NotificationJob";
 
 //entry
-export { dispatchNotifications } from "./runBatchNotificationProcessor";
+export {
+  dispatchNotifications,
+  DispatchNotificationOptions,
+} from "./runBatchNotificationProcessor";
 
 //notifications
 export {

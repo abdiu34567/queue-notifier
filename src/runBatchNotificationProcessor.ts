@@ -17,7 +17,7 @@ import { NotificationChannel } from "./jobs/channels/NotificationChannel";
  * This configuration defines how notifications should be processed, queued, and tracked.
  * It allows customization of notification channels, database queries, rate limits, logging, and response tracking.
  */
-export interface RunBatchNotificationOptions<T> {
+export interface DispatchNotificationOptions<T> {
   /**
    * The Redis instance to be used for queueing and processing notifications.
    * This must be externally initialized and passed to ensure efficient connection reuse.
@@ -137,7 +137,7 @@ export interface RunBatchNotificationOptions<T> {
 }
 
 export async function dispatchNotifications<T>(
-  options: RunBatchNotificationOptions<T>
+  options: DispatchNotificationOptions<T>
 ): Promise<void> {
   // 1. Initialize Redis externally.
   RedisClient.setInstance(options.redisInstance);
