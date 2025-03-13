@@ -1,7 +1,6 @@
 import { FirebaseNotifier } from "../../src/jobs/channels/FirebaseNotifier";
 import admin from "firebase-admin";
 
-// Create persistent Jest mock functions explicitly
 const sendEachForMulticastMock = jest.fn().mockResolvedValue({
   successCount: 2,
   failureCount: 0,
@@ -30,7 +29,6 @@ describe("FirebaseNotifier", () => {
     jest.clearAllMocks();
   });
 
-  // In your test file (e.g., EmailNotifier.test.ts)
   beforeAll(() => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "error").mockImplementation(() => {});

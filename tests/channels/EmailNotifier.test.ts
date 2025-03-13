@@ -1,7 +1,6 @@
 import { EmailNotifier } from "../../src/jobs/channels/EmailNotifier";
 import nodemailer from "nodemailer";
 
-// Mock nodemailer explicitly
 const sendMailMock = jest
   .fn()
   .mockResolvedValue({ messageId: "mocked-message-id" });
@@ -26,7 +25,6 @@ describe("EmailNotifier", () => {
     jest.clearAllMocks();
   });
 
-  // In your test file (e.g., EmailNotifier.test.ts)
   beforeAll(() => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "error").mockImplementation(() => {});
@@ -77,7 +75,6 @@ describe("EmailNotifier", () => {
       notifier.send(manyRecipients, "Rate Limit Test", { subject: "Test" })
     ).resolves.not.toThrow();
 
-    // Ensure it waits for all emails to be sent
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     expect(sendMailMock).toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import webPush, { PushSubscription } from "web-push";
 import { NotificationChannel } from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
+import Logger from "../../utils/Logger";
 
 interface WebPushNotifierConfig {
   publicKey: string;
@@ -26,38 +27,50 @@ export class WebPushNotifier implements NotificationChannel {
     userIds: string[],
     message: string,
     meta?: Record<string, any>
-  ): Promise<void> {
+  ): Promise<
+    { status: string; recipient: string; response?: any; error?: string }[]
+  > {
     const subscriptions: PushSubscription[] = userIds.map((id) =>
       JSON.parse(id)
     );
+    const results: any[] = [];
 
-    const sendPromises = subscriptions.map((subscription) =>
-      this.rateLimiter.schedule(() =>
-        webPush
-          .sendNotification(
-            subscription,
-            JSON.stringify({
-              title: meta?.title || "Notification",
-              body: message,
-              data: meta?.data || {},
-            })
-          )
-          .then(() => {
-            console.log(`📨 Web Push sent successfully.`);
-          })
-          .catch((err) => {
-            console.error("❌ Web Push Error:", err);
-          })
-      )
+    await Promise.all(
+      subscriptions.map(async (subscription) => {
+        try {
+          const response = await this.rateLimiter.schedule(() =>
+            webPush.sendNotification(
+              subscription,
+              JSON.stringify({
+                title: meta?.title || "Notification",
+                body: message,
+                data: meta?.data || {},
+              })
+            )
+          );
+
+          Logger.log(
+            `📨 Web Push sent successfully to ${subscription.endpoint}`
+          );
+          results.push({
+            status: "success",
+            recipient: subscription.endpoint,
+            response,
+          });
+        } catch (error: any) {
+          Logger.error(
+            `❌ Web Push Error (Recipient ${subscription.endpoint}):`,
+            error.message
+          );
+          results.push({
+            status: "failed",
+            recipient: subscription.endpoint,
+            error: error.message,
+          });
+        }
+      })
     );
 
-    await Promise.all(sendPromises);
+    return results;
   }
-}
-
-interface WebPushNotifierConfig {
-  publicKey: string;
-  privateKey: string;
-  contactEmail: string; // Required by Web Push spec
-  maxMessagesPerSecond?: number;
 }

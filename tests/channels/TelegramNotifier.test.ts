@@ -17,6 +17,10 @@ describe("TelegramNotifier", () => {
     maxMessagesPerSecond: 10,
   });
 
+  beforeEach(() => {
+    jest.spyOn(console, "log").mockImplementation(() => {});
+  });
+
   test("should send Telegram notification successfully", async () => {
     await expect(
       telegramNotifier.send(["12345"], "Test message")

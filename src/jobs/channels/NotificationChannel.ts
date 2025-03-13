@@ -3,5 +3,7 @@ export interface NotificationChannel {
     userIds: string[],
     message: string,
     meta?: Record<string, any>
-  ): Promise<void>;
+  ): Promise<
+    { status: string; recipient: string; response?: any; error?: string }[]
+  >;
 }

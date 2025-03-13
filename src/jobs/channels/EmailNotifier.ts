@@ -1,6 +1,7 @@
 import nodemailer, { Transporter } from "nodemailer";
 import { NotificationChannel } from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
+import Logger from "../../utils/Logger";
 
 interface EmailNotifierConfig {
   host: string;
@@ -32,27 +33,39 @@ export class EmailNotifier implements NotificationChannel {
   async send(
     userIds: string[],
     message: string,
-    meta?: Record<string, any>
-  ): Promise<void> {
-    const sendPromises = userIds.map((email) =>
-      this.rateLimiter.schedule(() =>
-        this.transporter
-          .sendMail({
-            from: this.config.from,
-            to: email,
-            subject: meta?.subject || "Notification",
-            text: message,
-            html: meta?.html || message, // allow html emails optionally
-          })
-          .then((info) => {
-            console.log(`📨 Email sent to ${userIds}: ${info.messageId}`);
-          })
-          .catch((err) => {
-            console.error(`❌ Email Error (Recipient ${userIds}):`, err);
-          })
-      )
+    meta?: Record<string, any> | undefined
+  ): Promise<
+    { status: string; recipient: string; response?: any; error?: string }[]
+  > {
+    const results: any[] = [];
+
+    await Promise.all(
+      userIds.map(async (email) => {
+        try {
+          const info = await this.rateLimiter.schedule(() =>
+            this.transporter.sendMail({
+              from: this.config.from,
+              to: email,
+              subject: meta?.subject || "Notification",
+              text: message,
+              html: meta?.html || message, // Allow optional HTML emails
+            })
+          );
+
+          Logger.log(`📨 Email sent to ${email}: ${info.messageId}`);
+
+          results.push({ status: "success", recipient: email, response: info });
+        } catch (err: any) {
+          Logger.error(`❌ Email Error (Recipient ${email}):`, err.message);
+          results.push({
+            status: "failed",
+            recipient: email,
+            error: err.message,
+          });
+        }
+      })
     );
 
-    await Promise.all(sendPromises);
+    return results;
   }
 }

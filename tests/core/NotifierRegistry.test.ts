@@ -6,8 +6,14 @@ class DummyNotifier implements NotificationChannel {
     userIds: string[],
     message: string,
     meta?: Record<string, any>
-  ): Promise<void> {
-    // Dummy implementation
+  ): Promise<
+    { status: string; recipient: string; response?: any; error?: string }[]
+  > {
+    return userIds.map((userId) => ({
+      status: "success",
+      recipient: userId,
+      response: `Dummy response for ${message}`,
+    }));
   }
 }
 

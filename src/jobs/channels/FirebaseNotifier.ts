@@ -1,6 +1,7 @@
 import admin, { ServiceAccount } from "firebase-admin";
 import { NotificationChannel } from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
+import Logger from "../../utils/Logger";
 
 interface FirebaseNotifierConfig {
   serviceAccount: ServiceAccount;
@@ -33,18 +34,17 @@ export class FirebaseNotifier implements NotificationChannel {
     userIds: string[],
     message: string,
     meta?: Record<string, any>
-  ): Promise<void> {
+  ): Promise<
+    { status: string; recipient: string; response?: any; error?: string }[]
+  > {
     const messaging = admin.messaging();
-
     const payload: admin.messaging.MessagingPayload = {
-      notification: {
-        title: meta?.title || "Notification",
-        body: message,
-      },
+      notification: { title: meta?.title || "Notification", body: message },
       data: meta?.data || {},
     };
 
-    const tokensChunks = this.chunkArray(userIds, 500); // FCM limit: max 500 tokens per request
+    const tokensChunks = this.chunkArray(userIds, 500); // FCM limit: 500 tokens per request
+    const results: any[] = [];
 
     for (const tokens of tokensChunks) {
       await this.rateLimiter.schedule(async () => {
@@ -54,25 +54,41 @@ export class FirebaseNotifier implements NotificationChannel {
             ...payload,
           });
 
-          console.log(
+          Logger.log(
             `📨 Firebase notifications sent: ${response.successCount} succeeded, ${response.failureCount} failed.`
           );
 
-          if (response.failureCount > 0) {
-            response.responses.forEach((res, idx) => {
-              if (!res.success) {
-                console.error(
-                  `❌ Firebase Error (Token: ${tokens[idx]}):`,
-                  res.error
-                );
-              }
-            });
-          }
-        } catch (error) {
-          console.error("❌ Firebase Notification Error:", error);
+          response.responses.forEach((res, idx) => {
+            if (res.success) {
+              results.push({
+                status: "success",
+                recipient: tokens[idx],
+                response: res,
+              });
+            } else {
+              Logger.error(
+                `❌ Firebase Error (Token: ${tokens[idx]}):`,
+                res.error
+              );
+              results.push({
+                status: "failed",
+                recipient: tokens[idx],
+                error: res.error?.message,
+              });
+            }
+          });
+        } catch (error: any) {
+          Logger.error("❌ Firebase Notification Error:", error.message);
+          results.push({
+            status: "failed",
+            recipient: "batch",
+            error: error.message,
+          });
         }
       });
     }
+
+    return results;
   }
 
   // Utility function for chunking tokens

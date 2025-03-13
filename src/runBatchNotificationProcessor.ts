@@ -8,6 +8,7 @@ import { TelegramNotifier } from "./jobs/channels/TelegramNotifier";
 import { EmailNotifier } from "./jobs/channels/EmailNotifier";
 import { WebPushNotifier } from "./jobs/channels/WebPushNotifier";
 import { NotifierRegistry } from "./core/NotifierRegistry";
+import Logger from "./utils/Logger";
 
 export interface RunBatchNotificationOptions<T> {
   redisInstance: Redis;
@@ -22,6 +23,9 @@ export interface RunBatchNotificationOptions<T> {
   batchSize?: number;
   maxQueriesPerSecond?: number;
   startWorker?: boolean;
+  trackResponses?: boolean; // Enable or disable tracking
+  trackingKey?: string; // Custom Redis key for storing stats
+  loggingEnabled?: boolean;
 }
 
 /**
@@ -40,7 +44,10 @@ export async function dispatchNotifications<T>(
   // 1. Initialize Redis externally.
   RedisClient.setInstance(options.redisInstance);
 
-  // 2. Create the notifier instance based on the specified type.
+  // 2. Configure Logger
+  Logger.enableLogging(options.loggingEnabled ?? true); // Default: logging is ON
+
+  // 3. Create the notifier instance based on the specified type.
   let notifier;
   switch (options.notifierType) {
     case "firebase":
@@ -59,10 +66,10 @@ export async function dispatchNotifications<T>(
       throw new Error("Unsupported notifier type");
   }
 
-  // 3. Register the notifier before enqueueing jobs
+  // 4. Register the notifier before enqueueing jobs
   NotifierRegistry.register(options.notifierType, notifier);
 
-  // 4. Process records in batches until no more results.
+  // 5. Process records in batches until no more results.
   await processInBatches<T>(
     options.dbQuery,
     async (records: T[]) => {
@@ -72,6 +79,8 @@ export async function dispatchNotifications<T>(
         message: options.message,
         channel: options.notifierType, // ✅ Ensure channel is stored
         meta: options.meta,
+        trackResponses: options.trackResponses,
+        trackingKey: options.trackingKey || "notifications:stats", // Default key
       });
     },
     {
@@ -80,7 +89,7 @@ export async function dispatchNotifications<T>(
     }
   );
 
-  // 5. Optionally start the worker to process the enqueued jobs.
+  // 6. Optionally start the worker to process the enqueued jobs.
   if (options.startWorker) {
     new WorkerManager({ queueName: options.queueName });
   }

@@ -1,6 +1,8 @@
 import { Worker, Job } from "bullmq";
 import RedisClient from "../utils/RedisClient";
 import { NotifierRegistry } from "./NotifierRegistry";
+import { trackNotificationResponse } from "../utils/ResponseTrackers";
+import Logger from "../utils/Logger";
 
 interface WorkerConfig {
   queueName: string;
@@ -25,23 +27,38 @@ export class WorkerManager {
     );
 
     this.worker.on("completed", (job) => {
-      console.log(`✅ Job completed successfully: ${job.id}`);
+      Logger.log(`✅ Job completed successfully: ${job.id}`);
     });
 
     this.worker.on("failed", (job, error) => {
-      console.error(`❌ Job failed (${job?.id}):`, error);
+      Logger.error(`❌ Job failed (${job?.id}):`, error);
     });
 
-    console.log(
+    Logger.log(
       `🚀 Worker started listening on queue "${this.config.queueName}"`
     );
   }
 
   private async jobProcessor(job: Job): Promise<void> {
-    const { userIds, message, channel, meta } = job.data;
-
+    const { userIds, message, channel, meta, trackResponses, trackingKey } =
+      job.data;
     const notifier = NotifierRegistry.get(channel);
-    await notifier.send(userIds, message, meta);
+
+    try {
+      const response = await notifier.send(userIds, message, meta);
+
+      if (trackResponses && response) {
+        await trackNotificationResponse(trackingKey, response);
+      }
+    } catch (error: any) {
+      Logger.error(`❌ Notification failed: ${error.message}`);
+      if (trackResponses) {
+        await trackNotificationResponse(trackingKey, {
+          success: false,
+          error: error.message,
+        });
+      }
+    }
   }
 
   async close(): Promise<void> {

@@ -1,10 +1,6 @@
-// import webPush from "web-push";
-
-// 1. Use "mock" prefix for variables (Jest hoists these)
 const mockSetVapidDetails = jest.fn();
 const mockSendNotification = jest.fn().mockResolvedValue({ statusCode: 201 });
 
-// 2. Jest now recognizes the initialized mocks
 jest.mock("web-push", () => ({
   setVapidDetails: mockSetVapidDetails,
   sendNotification: mockSendNotification,
@@ -23,7 +19,6 @@ describe("WebPushNotifier", () => {
     jest.clearAllMocks();
   });
 
-  // In your test file (e.g., EmailNotifier.test.ts)
   beforeAll(() => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "error").mockImplementation(() => {});
@@ -42,7 +37,6 @@ describe("WebPushNotifier", () => {
   it("should send notifications successfully", async () => {
     const notifier = new WebPushNotifier(webPushConfig);
 
-    // Typically userIds are stringified subscription objects
     const subscriptions = [
       JSON.stringify({
         endpoint: "https://fcm.googleapis.com/fcm/send/fake1",
@@ -64,10 +58,8 @@ describe("WebPushNotifier", () => {
       notifier.send(subscriptions, "Test web push message", { title: "Hello!" })
     ).resolves.not.toThrow();
 
-    // Verify we called sendNotification for each subscription
     expect(mockSendNotification).toHaveBeenCalledTimes(subscriptions.length);
 
-    // Optionally check that payload is as expected
     const expectedPayload = JSON.stringify({
       title: "Hello!",
       body: "Test web push message",
@@ -98,7 +90,6 @@ describe("WebPushNotifier", () => {
       })
     ).resolves.not.toThrow();
 
-    // We just verify that at least one call occurred
     expect(mockSendNotification).toHaveBeenCalled();
   });
 });

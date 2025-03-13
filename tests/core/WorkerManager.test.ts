@@ -2,7 +2,6 @@ import { Worker } from "bullmq";
 import { WorkerManager } from "../../src/core/WorkerManager";
 import { NotifierRegistry } from "../../src/core/NotifierRegistry";
 
-// Mock external dependencies
 jest.mock("bullmq", () => ({
   Worker: jest.fn().mockImplementation(() => ({
     on: jest.fn(),
@@ -24,7 +23,6 @@ jest.mock("../../src/core/NotifierRegistry", () => ({
   },
 }));
 
-// Mock console methods
 const mockConsoleLog = jest.spyOn(console, "log").mockImplementation();
 const mockConsoleError = jest.spyOn(console, "error").mockImplementation();
 
