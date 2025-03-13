@@ -1,6 +1,6 @@
 {
   "name": "notify-worker-sdk",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "An SDK for handling notifications via Redis and job queues.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
