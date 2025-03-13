@@ -43,7 +43,7 @@ RedisClient.setInstance(redis);
 
 ```typescript
 import {
-  runBatchNotificationProcessor,
+  dispatchNotifications,
   RunBatchNotificationOptions,
 } from "notify-worker-sdk";
 import serviceAccount from "./firebase-service-account.json";
@@ -67,7 +67,7 @@ async function sendFirebaseNotifications() {
     startWorker: true,
   };
 
-  await runBatchNotificationProcessor(options);
+  await dispatchNotifications(options);
 }
 
 sendFirebaseNotifications();
@@ -79,7 +79,7 @@ sendFirebaseNotifications();
 
 ```typescript
 import {
-  runBatchNotificationProcessor,
+  dispatchNotifications,
   RunBatchNotificationOptions,
 } from "notify-worker-sdk";
 
@@ -101,7 +101,7 @@ async function sendTelegramNotifications() {
     startWorker: true,
   };
 
-  await runBatchNotificationProcessor(options);
+  await dispatchNotifications(options);
 }
 
 sendTelegramNotifications();
@@ -113,7 +113,7 @@ sendTelegramNotifications();
 
 ```typescript
 import {
-  runBatchNotificationProcessor,
+  dispatchNotifications,
   RunBatchNotificationOptions,
 } from "notify-worker-sdk";
 
@@ -144,7 +144,7 @@ async function sendWebPushNotifications() {
     startWorker: true,
   };
 
-  await runBatchNotificationProcessor(options);
+  await dispatchNotifications(options);
 }
 
 sendWebPushNotifications();

@@ -3,7 +3,6 @@ import RedisClient from "./utils/RedisClient";
 import { processInBatches } from "./core/BatchProcessor";
 import { QueueManager } from "./core/QueueManager";
 import { WorkerManager } from "./core/WorkerManager";
-import { NotificationJob } from "./jobs/NotificationJob";
 import { FirebaseNotifier } from "./jobs/channels/FirebaseNotifier";
 import { TelegramNotifier } from "./jobs/channels/TelegramNotifier";
 import { EmailNotifier } from "./jobs/channels/EmailNotifier";
@@ -35,7 +34,7 @@ export interface RunBatchNotificationOptions<T> {
  * - Enqueues a notification job for each batch.
  * - Optionally starts a worker to process the jobs.
  */
-export async function runBatchNotificationProcessor<T>(
+export async function dispatchNotifications<T>(
   options: RunBatchNotificationOptions<T>
 ): Promise<void> {
   // 1. Initialize Redis externally.

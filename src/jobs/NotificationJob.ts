@@ -11,11 +11,8 @@ interface NotificationPayload {
 
 export class NotificationJob extends BaseJob<NotificationPayload> {
   type = "notification";
-  //   private notifier: NotificationChannel;
-
   constructor(payload: NotificationPayload) {
     super(payload);
-    // this.notifier = notifier;
   }
 
   async execute(): Promise<void> {
@@ -30,12 +27,4 @@ export class NotificationJob extends BaseJob<NotificationPayload> {
       this.payload.meta
     );
   }
-
-  //   async execute(): Promise<void> {
-  //     await this.notifier.send(
-  //       this.payload.userIds,
-  //       this.payload.message,
-  //       this.payload.meta
-  //     );
-  //   }
 }
