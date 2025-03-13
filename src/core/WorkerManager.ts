@@ -46,7 +46,6 @@ export class WorkerManager {
 
     try {
       const response = await notifier.send(userIds, message, meta);
-
       if (trackResponses && response) {
         await trackNotificationResponse(trackingKey, response);
       }

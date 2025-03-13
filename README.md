@@ -1,188 +1,176 @@
-## **📢 Notify Worker SDK**
+# Notify Worker SDK
 
-🚀 **Notify Worker SDK** is a powerful, flexible **job queue system** designed for handling notifications across multiple channels (**Telegram, Firebase, Email, Web Push**) with built-in **Redis-backed queue management**.
+## 🚀 Overview
 
-### **✨ Features**
+**Notify Worker SDK** is a scalable, high-performance job queueing system designed for handling large-scale **notifications** across multiple channels, including:
 
-- ✅ **Multi-channel support** (Telegram, Firebase, Email, Web Push)
-- ✅ **Redis-powered queue management** (via **BullMQ**)
-- ✅ **Rate-limiting** for controlled message dispatch
-- ✅ **Batch processing** for large-scale notifications
-- ✅ **Easy integration** with any database
+- **Email** (SMTP-based)
+- **Firebase Push Notifications** (FCM)
+- **Telegram Messages**
+- **Web Push Notifications**
+
+This SDK efficiently **queues and processes notifications** while supporting **rate-limiting, response tracking, and error handling**. It integrates seamlessly with **Redis** using `bullmq` for distributed job management.
 
 ---
 
-## **📦 Installation**
+## 📦 Installation
 
-```bash
+```sh
 npm install notify-worker-sdk
 ```
 
-> Ensure **Redis** is installed and running.
+---
+
+## 🔧 Configuration Options
+
+### **`dispatchNotifications` Options**
+
+| Option                | Type                                              | Default Value           | Description                                |
+| --------------------- | ------------------------------------------------- | ----------------------- | ------------------------------------------ | ------ | ------------ | ---------------------------------- |
+| `redisInstance`       | `Redis`                                           | **Required**            | External Redis instance for job queueing   |
+| `notifierType`        | `'firebase'                                       | 'telegram'              | 'email'                                    | 'web'` | **Required** | Specifies the notification channel |
+| `notifierOptions`     | `object`                                          | **Required**            | Configuration for the chosen notifier      |
+| `dbQuery`             | `(offset: number, limit: number) => Promise<T[]>` | **Required**            | Function to fetch users in batches         |
+| `mapRecordToUserId`   | `(record: T) => string`                           | **Required**            | Extracts user identifiers from DB records  |
+| `message`             | `string`                                          | **Required**            | Message content for the notification       |
+| `meta`                | `object`                                          | `{}`                    | Extra metadata (e.g., title, HTML content) |
+| `queueName`           | `string`                                          | `'notifications'`       | The queue name for job processing          |
+| `jobName`             | `string`                                          | `'notificationJob'`     | The job name inside the queue              |
+| `batchSize`           | `number`                                          | `1000`                  | Number of users processed per batch        |
+| `maxQueriesPerSecond` | `number`                                          | `10`                    | Limits database query rate                 |
+| `startWorker`         | `boolean`                                         | `false`                 | Whether to start a worker automatically    |
+| `trackResponses`      | `boolean`                                         | `false`                 | Enables response/error tracking in Redis   |
+| `trackingKey`         | `string`                                          | `'notifications:stats'` | Redis key for storing response statistics  |
+| `loggingEnabled`      | `boolean`                                         | `true`                  | Enables or disables logging                |
 
 ---
 
-## **🚀 Quick Start**
+## 📚 Usage Examples
 
-### **1️⃣ Initialize Redis**
+### **1️⃣ Email Notifications**
 
 ```typescript
 import Redis from "ioredis";
-import { RedisClient } from "notify-worker-sdk";
+import { dispatchNotifications } from "notify-worker-sdk";
 
-// Create Redis instance and set globally
 const redis = new Redis("redis://localhost:6379");
-RedisClient.setInstance(redis);
+
+await dispatchNotifications({
+  redisInstance: redis,
+  notifierType: "email",
+  notifierOptions: {
+    host: "smtp.example.com",
+    port: 465,
+    secure: true,
+    auth: { user: "user@example.com", pass: "password" },
+    from: "notifications@example.com",
+  },
+  dbQuery: async (offset, limit) => [{ userId: "test@example.com" }],
+  mapRecordToUserId: (record) => record.userId,
+  message: "Test Email Notification",
+  meta: { subject: "Hello!" },
+  queueName: "notifications",
+  jobName: "emailNotification",
+  startWorker: true,
+});
+```
+
+### **2️⃣ Firebase Push Notifications (FCM)**
+
+```typescript
+await dispatchNotifications({
+  redisInstance: redis,
+  notifierType: "firebase",
+  notifierOptions: {
+    serviceAccount: require("./firebase-service-account.json"),
+  },
+  dbQuery: async (offset, limit) => [{ userId: "firebase-token-123" }],
+  mapRecordToUserId: (record) => record.userId,
+  message: "Test Push Notification!",
+  meta: { title: "New Alert!" },
+  queueName: "notifications",
+  jobName: "firebaseNotification",
+  trackResponses: true,
+  trackingKey: "notifications:firebaseStats",
+});
+```
+
+### **3️⃣ Telegram Messages**
+
+```typescript
+await dispatchNotifications({
+  redisInstance: redis,
+  notifierType: "telegram",
+  notifierOptions: { botToken: "123456:ABC-DEF" },
+  dbQuery: async (offset, limit) => [{ userId: "1173180004" }],
+  mapRecordToUserId: (record) => record.userId,
+  message: "Test Telegram Notification!",
+  queueName: "notifications",
+  jobName: "telegramNotification",
+});
+```
+
+### **4️⃣ Web Push Notifications**
+
+```typescript
+await dispatchNotifications({
+  redisInstance: redis,
+  notifierType: "web",
+  notifierOptions: {
+    publicKey: "YOUR_VAPID_PUBLIC_KEY",
+    privateKey: "YOUR_VAPID_PRIVATE_KEY",
+    contactEmail: "admin@example.com",
+  },
+  dbQuery: async (offset, limit) => [
+    { userId: JSON.stringify(subscriptionData) },
+  ],
+  mapRecordToUserId: (record) => record.userId,
+  message: "Web Push Test!",
+  meta: { title: "Web Alert!" },
+  queueName: "notifications",
+  jobName: "webPushNotification",
+});
 ```
 
 ---
 
-### **2️⃣ Send Notifications in Batches**
+## 📊 Response Tracking in Redis
 
-#### **📌 Example: Firebase Notification**
+If `trackResponses` is enabled, **response stats are stored in Redis**:
 
-```typescript
-import {
-  dispatchNotifications,
-  RunBatchNotificationOptions,
-} from "notify-worker-sdk";
-import serviceAccount from "./firebase-service-account.json";
+```bash
+redis-cli
+HGETALL notifications:stats
+```
 
-async function sendFirebaseNotifications() {
-  const options: RunBatchNotificationOptions<{ userId: string }> = {
-    redisInstance: redis,
-    notifierType: "firebase",
-    notifierOptions: { serviceAccount },
-    dbQuery: async (offset, limit) => [
-      { userId: "firebase-user-token-1" },
-      { userId: "firebase-user-token-2" },
-    ],
-    mapRecordToUserId: (record) => record.userId,
-    message: "🔥 Your Firebase Notification!",
-    meta: { title: "Firebase Alert" },
-    queueName: "notifications",
-    jobName: "firebaseNotification",
-    batchSize: 2,
-    maxQueriesPerSecond: 5,
-    startWorker: true,
-  };
+**Example Output:**
 
-  await dispatchNotifications(options);
+```json
+{
+  "success": "950000",
+  "Invalid email address": "3000",
+  "User blocked the bot": "2000"
 }
-
-sendFirebaseNotifications();
 ```
 
 ---
 
-#### **📌 Example: Telegram Notification**
+## 🛠 Debugging & Logs
+
+By default, logs are **enabled**. You can disable logs:
 
 ```typescript
-import {
-  dispatchNotifications,
-  RunBatchNotificationOptions,
-} from "notify-worker-sdk";
-
-async function sendTelegramNotifications() {
-  const options: RunBatchNotificationOptions<{ userId: string }> = {
-    redisInstance: redis,
-    notifierType: "telegram",
-    notifierOptions: { botToken: "YOUR_TELEGRAM_BOT_TOKEN" },
-    dbQuery: async (offset, limit) => [
-      { userId: "123456789" },
-      { userId: "987654321" },
-    ],
-    mapRecordToUserId: (record) => record.userId,
-    message: "📢 Telegram Notification Test!",
-    queueName: "notifications",
-    jobName: "telegramNotification",
-    batchSize: 2,
-    maxQueriesPerSecond: 5,
-    startWorker: true,
-  };
-
-  await dispatchNotifications(options);
-}
-
-sendTelegramNotifications();
+await dispatchNotifications({ loggingEnabled: false });
 ```
 
 ---
 
-### **3️⃣ Web Push Notification**
+## 🚀 Contributing
 
-```typescript
-import {
-  dispatchNotifications,
-  RunBatchNotificationOptions,
-} from "notify-worker-sdk";
-
-async function sendWebPushNotifications() {
-  const options: RunBatchNotificationOptions<{ subscription: string }> = {
-    redisInstance: redis,
-    notifierType: "web",
-    notifierOptions: {
-      publicKey: "YOUR_PUBLIC_KEY",
-      privateKey: "YOUR_PRIVATE_KEY",
-      contactEmail: "youremail@example.com",
-    },
-    dbQuery: async (offset, limit) => [
-      {
-        subscription: JSON.stringify({
-          endpoint: "https://push-endpoint.com",
-          keys: { p256dh: "...", auth: "..." },
-        }),
-      },
-    ],
-    mapRecordToUserId: (record) => record.subscription,
-    message: "🌍 Web Push Test Notification!",
-    meta: { title: "Web Push" },
-    queueName: "notifications",
-    jobName: "webPushNotification",
-    batchSize: 1,
-    maxQueriesPerSecond: 5,
-    startWorker: true,
-  };
-
-  await dispatchNotifications(options);
-}
-
-sendWebPushNotifications();
-```
+Feel free to open an **issue** or submit a **pull request**!
 
 ---
 
-## **💡 Advanced Usage**
+## 📜 License
 
-### **Custom Rate-Limiting**
-
-Modify **max queries per second** dynamically:
-
-```typescript
-batchSize: 500, // Process 500 users per batch
-maxQueriesPerSecond: 10, // Ensure 10 requests per second
-```
-
----
-
-### **Worker Only Mode**
-
-Want to enqueue jobs **separately** and process later?
-
-```typescript
-import { WorkerManager } from "notify-worker-sdk";
-
-new WorkerManager({ queueName: "notifications" }); // Starts worker
-```
-
----
-
-## **📜 License**
-
-MIT License © 2024 **Notify Worker SDK**
-
----
-
-### **🚀 Ready to Scale Your Notifications?**
-
-Start integrating today and **let Redis handle your notification workload effortlessly!** 🚀🔥
+MIT License © 2025 Notify Worker SDK

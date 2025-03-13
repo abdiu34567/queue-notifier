@@ -1,4 +1,3 @@
-// src/db/BatchProcessor.ts
 import { RateLimiter } from "./RateLimiter";
 
 export interface BatchQueryOptions {
