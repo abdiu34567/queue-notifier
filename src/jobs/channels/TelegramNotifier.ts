@@ -19,19 +19,27 @@ export class TelegramNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    message: string
+    message: string,
+    meta?: Record<string, any>
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const results: any[] = [];
 
+    // Default options for sending messages
+    const defaultOptions = { parse_mode: "MarkdownV2" };
+
+    // Allow additional Telegram options via meta.telegramOptions
+    const extraOptions = meta?.telegramOptions || {};
+
+    // Merge default and extra options (extraOptions takes precedence)
+    const sendOptions = { ...defaultOptions, ...extraOptions };
+
     await Promise.all(
       userIds.map(async (userId) => {
         try {
           const response = await this.rateLimiter.schedule(() =>
-            this.bot.telegram.sendMessage(userId, message, {
-              parse_mode: "Markdown",
-            })
+            this.bot.telegram.sendMessage(userId, message, sendOptions)
           );
 
           Logger.log(`📨 Telegram message sent to ${userId}:`, response);
