@@ -36,19 +36,18 @@ export class EmailNotifier implements NotificationChannel {
   }
 
   async send(
-    userIds: string[],
-    meta?: MailOptions
+    users: string[],
+    meta: MailOptions[]
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const results: any[] = [];
 
     await Promise.all(
-      userIds.map(async (email) => {
+      users.map(async (email, index) => {
         try {
-          // Ensure type safety
-          const emailOptions: Partial<MailOptions & MailOptions1> = meta || {};
-          // Prevent overriding 'to'
+          const emailOptions: Partial<MailOptions & MailOptions1> =
+            meta[index] || {};
           delete emailOptions.to;
           delete emailOptions.from;
 

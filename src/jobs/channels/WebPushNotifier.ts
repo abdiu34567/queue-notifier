@@ -25,7 +25,7 @@ export class WebPushNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    meta?: WebPush
+    meta: WebPush[]
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
@@ -35,10 +35,10 @@ export class WebPushNotifier implements NotificationChannel {
     const results: any[] = [];
 
     await Promise.all(
-      subscriptions.map(async (subscription) => {
+      subscriptions.map(async (subscription, index) => {
         try {
           // Ensure type safety
-          const webPushOptions: Partial<WebPush> = { ...meta };
+          const webPushOptions: Partial<WebPush> = { ...meta[index] };
           delete webPushOptions.title;
           delete webPushOptions.body;
           delete webPushOptions.data;
@@ -47,9 +47,9 @@ export class WebPushNotifier implements NotificationChannel {
             webPush.sendNotification(
               subscription,
               JSON.stringify({
-                title: meta?.title || "Notification",
-                body: meta?.body,
-                data: meta?.data || {},
+                title: meta[index].title || "Notification",
+                body: meta[index].body,
+                data: meta[index].data || {},
               }),
               { ...(webPushOptions as RequestOptions) }
             )

@@ -12,6 +12,7 @@ import Logger from "./utils/Logger";
 import {
   NotificationChannel,
   NotificationMeta,
+  RequiredMeta,
 } from "./jobs/channels/NotificationChannel";
 
 /**
@@ -74,7 +75,8 @@ export interface DispatchNotificationOptions<
    *  - `data`: Custom data payload for Firebase/Web Push.
    */
   //   meta: NotificationMeta[keyof NotificationMeta];
-  meta: NotificationMeta[N];
+  //   meta: NotificationMeta[N];
+  meta: (user: T) => RequiredMeta[N];
 
   /**
    * The name of the queue where notification jobs will be added.
@@ -138,12 +140,10 @@ export interface DispatchNotificationOptions<
   customNotifier?: NotificationChannel;
 }
 
-export async function dispatchNotifications<T>(
-  options: DispatchNotificationOptions<
-    T,
-    "email" | "firebase" | "telegram" | "web"
-  >
-): Promise<void> {
+export async function dispatchNotifications<
+  T,
+  N extends keyof NotificationMeta
+>(options: DispatchNotificationOptions<T, N>): Promise<void> {
   // 1. Initialize Redis externally.
   RedisClient.setInstance(options.redisInstance);
 
@@ -181,13 +181,13 @@ export async function dispatchNotifications<T>(
     options.dbQuery,
     async (records: T[]) => {
       const userIds = records.map(options.mapRecordToUserId);
+
       await QueueManager.enqueueJob(options.queueName, options.jobName, {
         userIds,
-        // message: options.message,
         channel: options.notifierType,
-        meta: options.meta,
+        meta: records.map((record) => options.meta(record)),
         trackResponses: options.trackResponses,
-        trackingKey: options.trackingKey || "notifications:stats", // Default key
+        trackingKey: options.trackingKey || "notifications:stats",
       });
     },
     {

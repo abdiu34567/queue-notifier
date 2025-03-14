@@ -19,8 +19,8 @@ export class TelegramNotifier implements NotificationChannel {
   }
 
   async send(
-    userIds: string[],
-    meta: ExtraReplyMessage
+    users: string[],
+    meta: ExtraReplyMessage[]
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
@@ -36,22 +36,22 @@ export class TelegramNotifier implements NotificationChannel {
     const sendOptions = {
       ...defaultOptions,
       ...extraOptions,
-    } as ExtraReplyMessage;
+    } as Partial<ExtraReplyMessage>;
 
     await Promise.all(
-      userIds.map(async (userId) => {
+      users.map(async (user, index) => {
         try {
           const response = await this.rateLimiter.schedule(() =>
-            this.bot.telegram.sendMessage(userId, meta.text, sendOptions)
+            this.bot.telegram.sendMessage(user, meta[index].text, sendOptions)
           );
 
-          Logger.log(`📨 Telegram message sent to ${userId}:`, response);
-          results.push({ status: "success", recipient: userId, response });
+          Logger.log(`📨 Telegram message sent to ${user}:`, response);
+          results.push({ status: "success", recipient: user, response });
         } catch (error: any) {
-          Logger.error(`❌ Telegram Error (User ${userId}):`, error.message);
+          Logger.error(`❌ Telegram Error (User ${user}):`, error.message);
           results.push({
             status: "failed",
-            recipient: userId,
+            recipient: user,
             error: error.message,
           });
         }

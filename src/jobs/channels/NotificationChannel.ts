@@ -130,13 +130,17 @@ export interface WebPush extends RequestOptions {
 //   web: WebPush;
 // }
 
-export type NotificationMeta = {
-  [K in "telegram" | "email" | "firebase" | "web"]?: Partial<
-    Record<keyof RequiredMeta[K], RequiredMeta[K][keyof RequiredMeta[K]]>
-  >;
+// export type NotificationMeta = {
+//   [K in "telegram" | "email" | "firebase" | "web"]?: Partial<
+//     Record<keyof RequiredMeta[K], RequiredMeta[K][keyof RequiredMeta[K]]>
+//   >;
+// };
+
+export type NotificationMeta<T = any> = {
+  [K in keyof RequiredMeta]: RequiredMeta[K] | ((user: T) => RequiredMeta[K]);
 };
 
-type RequiredMeta = {
+export type RequiredMeta = {
   telegram: ExtraReplyMessage;
   email: MailOptions;
   firebase: FirebaseNotificationOptions;
