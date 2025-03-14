@@ -4,15 +4,14 @@ import { NotificationChannel } from "../../src/jobs/channels/NotificationChannel
 class DummyNotifier implements NotificationChannel {
   async send(
     userIds: string[],
-    message: string,
-    meta?: Record<string, any>
+    meta?: { body: "body" }
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     return userIds.map((userId) => ({
       status: "success",
       recipient: userId,
-      response: `Dummy response for ${message}`,
+      response: `Dummy response for ${meta?.body}`,
     }));
   }
 }

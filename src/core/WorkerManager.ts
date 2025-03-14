@@ -40,12 +40,11 @@ export class WorkerManager {
   }
 
   private async jobProcessor(job: Job): Promise<void> {
-    const { userIds, message, channel, meta, trackResponses, trackingKey } =
-      job.data;
+    const { userIds, channel, meta, trackResponses, trackingKey } = job.data;
     const notifier = NotifierRegistry.get(channel);
 
     try {
-      const response = await notifier.send(userIds, message, meta);
+      const response = await notifier.send(userIds, meta);
       if (trackResponses && response) {
         await trackNotificationResponse(trackingKey, response);
       }

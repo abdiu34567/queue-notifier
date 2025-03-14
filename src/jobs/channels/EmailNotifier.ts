@@ -1,7 +1,12 @@
 import nodemailer, { Transporter } from "nodemailer";
-import { NotificationChannel } from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
+import {
+  MailOptions,
+  MailOptions1,
+  NotificationChannel,
+} from "./NotificationChannel";
+import Mail from "nodemailer/lib/mailer";
 
 interface EmailNotifierConfig {
   host: string;
@@ -32,8 +37,7 @@ export class EmailNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    message: string,
-    meta?: Record<string, any> | undefined
+    meta?: MailOptions
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
@@ -42,13 +46,17 @@ export class EmailNotifier implements NotificationChannel {
     await Promise.all(
       userIds.map(async (email) => {
         try {
+          // Ensure type safety
+          const emailOptions: Partial<MailOptions & MailOptions1> = meta || {};
+          // Prevent overriding 'to'
+          delete emailOptions.to;
+          delete emailOptions.from;
+
           const info = await this.rateLimiter.schedule(() =>
             this.transporter.sendMail({
               from: this.config.from,
               to: email,
-              subject: meta?.subject || "Notification",
-              text: message,
-              html: meta?.html || message, // Allow optional HTML emails
+              ...(emailOptions as Mail.Options),
             })
           );
 

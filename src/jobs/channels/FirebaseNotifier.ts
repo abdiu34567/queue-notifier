@@ -1,5 +1,8 @@
 import admin, { ServiceAccount } from "firebase-admin";
-import { NotificationChannel } from "./NotificationChannel";
+import {
+  FirebaseNotificationOptions,
+  NotificationChannel,
+} from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
 
@@ -32,14 +35,16 @@ export class FirebaseNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    message: string,
-    meta?: Record<string, any>
+    meta?: FirebaseNotificationOptions
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const messaging = admin.messaging();
     const payload: admin.messaging.MessagingPayload = {
-      notification: { title: meta?.title || "Notification", body: message },
+      notification: {
+        title: meta?.title || "Default Notification",
+        body: meta?.body || "",
+      },
       data: meta?.data || {},
     };
 
@@ -49,10 +54,13 @@ export class FirebaseNotifier implements NotificationChannel {
     for (const tokens of tokensChunks) {
       await this.rateLimiter.schedule(async () => {
         try {
-          const response = await messaging.sendEachForMulticast({
-            tokens,
-            ...payload,
-          });
+          const response = await messaging.sendEachForMulticast(
+            {
+              tokens,
+              ...payload,
+            },
+            meta?.dryRun
+          );
 
           Logger.log(
             `📨 Firebase notifications sent: ${response.successCount} succeeded, ${response.failureCount} failed.`

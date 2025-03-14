@@ -103,8 +103,8 @@ describe("WorkerManager", () => {
       data: {
         userIds: ["user1", "user2"],
         message: "Test message",
-        channel: "web-push",
-        meta: { priority: "high" },
+        channel: "web",
+        meta: { priority: "high", body: "Test message" },
       },
     };
 
@@ -112,11 +112,10 @@ describe("WorkerManager", () => {
       const processor = (Worker as any).mock.calls[0][1];
       await processor(mockJob);
 
-      expect(NotifierRegistry.get).toHaveBeenCalledWith("web-push");
-      expect(NotifierRegistry.get("web-push").send).toHaveBeenCalledWith(
+      expect(NotifierRegistry.get).toHaveBeenCalledWith("web");
+      expect(NotifierRegistry.get("web").send).toHaveBeenCalledWith(
         ["user1", "user2"],
-        "Test message",
-        { priority: "high" }
+        { body: "Test message", priority: "high" }
       );
     });
 
@@ -128,9 +127,8 @@ describe("WorkerManager", () => {
       };
 
       await processor(jobWithoutMeta);
-      expect(NotifierRegistry.get("web-push").send).toHaveBeenCalledWith(
+      expect(NotifierRegistry.get("web").send).toHaveBeenCalledWith(
         ["user1", "user2"],
-        "Test message",
         undefined
       );
     });

@@ -1,7 +1,8 @@
-import { NotificationChannel } from "./NotificationChannel";
+import { NotificationChannel, ExtraReplyMessage } from "./NotificationChannel";
 import { Telegraf } from "telegraf";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
+// import { ExtraReplyMessage } from "telegraf/typings/telegram-types";
 
 interface TelegramNotifierConfig {
   botToken: string;
@@ -19,8 +20,7 @@ export class TelegramNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    message: string,
-    meta?: Record<string, any>
+    meta: ExtraReplyMessage
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
@@ -30,16 +30,19 @@ export class TelegramNotifier implements NotificationChannel {
     const defaultOptions = { parse_mode: "MarkdownV2" };
 
     // Allow additional Telegram options via meta.telegramOptions
-    const extraOptions = meta?.telegramOptions || {};
+    const extraOptions = meta || {};
 
     // Merge default and extra options (extraOptions takes precedence)
-    const sendOptions = { ...defaultOptions, ...extraOptions };
+    const sendOptions = {
+      ...defaultOptions,
+      ...extraOptions,
+    } as ExtraReplyMessage;
 
     await Promise.all(
       userIds.map(async (userId) => {
         try {
           const response = await this.rateLimiter.schedule(() =>
-            this.bot.telegram.sendMessage(userId, message, sendOptions)
+            this.bot.telegram.sendMessage(userId, meta.text, sendOptions)
           );
 
           Logger.log(`📨 Telegram message sent to ${userId}:`, response);

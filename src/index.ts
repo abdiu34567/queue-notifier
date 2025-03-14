@@ -12,7 +12,6 @@ export { WebPushNotifier } from "./jobs/channels/WebPushNotifier";
 
 // Jobs
 export { BaseJob } from "./jobs/BaseJob";
-export { NotificationJob } from "./jobs/NotificationJob";
 
 //entry
 export {

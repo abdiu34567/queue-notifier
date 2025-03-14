@@ -1,5 +1,5 @@
-import webPush, { PushSubscription } from "web-push";
-import { NotificationChannel } from "./NotificationChannel";
+import webPush, { PushSubscription, RequestOptions } from "web-push";
+import { NotificationChannel, WebPush } from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
 
@@ -25,8 +25,7 @@ export class WebPushNotifier implements NotificationChannel {
 
   async send(
     userIds: string[],
-    message: string,
-    meta?: Record<string, any>
+    meta?: WebPush
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
@@ -38,14 +37,21 @@ export class WebPushNotifier implements NotificationChannel {
     await Promise.all(
       subscriptions.map(async (subscription) => {
         try {
+          // Ensure type safety
+          const webPushOptions: Partial<WebPush> = { ...meta };
+          delete webPushOptions.title;
+          delete webPushOptions.body;
+          delete webPushOptions.data;
+
           const response = await this.rateLimiter.schedule(() =>
             webPush.sendNotification(
               subscription,
               JSON.stringify({
                 title: meta?.title || "Notification",
-                body: message,
+                body: meta?.body,
                 data: meta?.data || {},
-              })
+              }),
+              { ...(webPushOptions as RequestOptions) }
             )
           );
 

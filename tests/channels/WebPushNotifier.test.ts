@@ -55,19 +55,20 @@ describe("WebPushNotifier", () => {
     ];
 
     await expect(
-      notifier.send(subscriptions, "Test web push message", { title: "Hello!" })
+      notifier.send(subscriptions, { title: "Hello!", body: "Test web push" })
     ).resolves.not.toThrow();
 
     expect(mockSendNotification).toHaveBeenCalledTimes(subscriptions.length);
 
     const expectedPayload = JSON.stringify({
       title: "Hello!",
-      body: "Test web push message",
+      body: "Test web push",
       data: {},
     });
-    expect(mockSendNotification).toHaveBeenCalledWith(
-      JSON.parse(subscriptions[0]),
-      expectedPayload
+    expect(mockSendNotification).toHaveBeenLastCalledWith(
+      JSON.parse(subscriptions[1]),
+      expectedPayload,
+      {}
     );
   });
 
@@ -85,8 +86,9 @@ describe("WebPushNotifier", () => {
     );
 
     await expect(
-      notifier.send(manySubscriptions, "Rate limit test", {
-        title: "WebPushTest",
+      notifier.send(manySubscriptions, {
+        title: "Hello!",
+        body: "Rate limit test",
       })
     ).resolves.not.toThrow();
 

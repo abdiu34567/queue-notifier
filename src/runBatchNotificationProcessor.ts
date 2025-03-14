@@ -9,7 +9,10 @@ import { EmailNotifier } from "./jobs/channels/EmailNotifier";
 import { WebPushNotifier } from "./jobs/channels/WebPushNotifier";
 import { NotifierRegistry } from "./core/NotifierRegistry";
 import Logger from "./utils/Logger";
-import { NotificationChannel } from "./jobs/channels/NotificationChannel";
+import {
+  NotificationChannel,
+  NotificationMeta,
+} from "./jobs/channels/NotificationChannel";
 
 /**
  * Configuration options for running batch notifications.
@@ -17,7 +20,10 @@ import { NotificationChannel } from "./jobs/channels/NotificationChannel";
  * This configuration defines how notifications should be processed, queued, and tracked.
  * It allows customization of notification channels, database queries, rate limits, logging, and response tracking.
  */
-export interface DispatchNotificationOptions<T> {
+export interface DispatchNotificationOptions<
+  T,
+  N extends keyof NotificationMeta
+> {
   /**
    * The Redis instance to be used for queueing and processing notifications.
    * This must be externally initialized and passed to ensure efficient connection reuse.
@@ -28,7 +34,8 @@ export interface DispatchNotificationOptions<T> {
    * The notification channel to be used for sending messages.
    * Available options: "firebase", "telegram", "email", "web".
    */
-  notifierType: "firebase" | "telegram" | "email" | "web";
+  //   notifierType: keyof NotificationMeta;
+  notifierType: N;
 
   /**
    * Configuration options specific to the chosen notifier.
@@ -60,19 +67,14 @@ export interface DispatchNotificationOptions<T> {
   mapRecordToUserId: (record: T) => string;
 
   /**
-   * The message content to be sent to the users.
-   * This applies to all notification channels.
-   */
-  message: string;
-
-  /**
-   * Optional metadata to be included with the message.
+   * Metadata to be included with the message.
    * This can be used to pass additional data such as:
    *  - `title`: Used for push notifications or emails.
    *  - `html`: If sending an HTML email.
    *  - `data`: Custom data payload for Firebase/Web Push.
    */
-  meta?: Record<string, any>;
+  //   meta: NotificationMeta[keyof NotificationMeta];
+  meta: NotificationMeta[N];
 
   /**
    * The name of the queue where notification jobs will be added.
@@ -137,7 +139,10 @@ export interface DispatchNotificationOptions<T> {
 }
 
 export async function dispatchNotifications<T>(
-  options: DispatchNotificationOptions<T>
+  options: DispatchNotificationOptions<
+    T,
+    "email" | "firebase" | "telegram" | "web"
+  >
 ): Promise<void> {
   // 1. Initialize Redis externally.
   RedisClient.setInstance(options.redisInstance);
@@ -178,7 +183,7 @@ export async function dispatchNotifications<T>(
       const userIds = records.map(options.mapRecordToUserId);
       await QueueManager.enqueueJob(options.queueName, options.jobName, {
         userIds,
-        message: options.message,
+        // message: options.message,
         channel: options.notifierType,
         meta: options.meta,
         trackResponses: options.trackResponses,
