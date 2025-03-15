@@ -123,8 +123,7 @@ await dispatchNotifications({
     return offset >= users.length ? [] : users.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.userId,
-  message: "🔥 Your Firebase Notification!",
-  meta: { title: "Firebase Alert" },
+  meta: (user) => ({ title: "🔥 Firebase Alert" }),
   queueName: "notifications",
   jobName: "firebaseNotification",
   batchSize: 2,
@@ -157,7 +156,7 @@ await dispatchNotifications({
     return offset >= users.length ? [] : users.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.userId,
-  message: "📢 Telegram Notification Test!",
+  meta:(user) => ({text:"📢 Telegram Notification Test!"})
   queueName: "notifications",
   jobName: "telegramNotification",
   batchSize: 2,
@@ -198,8 +197,7 @@ await dispatchNotifications({
     return offset >= users.length ? [] : users.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.userId,
-  message: "Test Email Notification",
-  meta: { subject: "Test Email" },
+  meta: () => ({ subject: "Test Email Notification" }),
   queueName: "notifications",
   jobName: "emailNotification",
   batchSize: 2,
@@ -246,8 +244,9 @@ await dispatchNotifications({
       : subscriptions.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.subscription,
-  message: "🌍 Web Push Test Notification!",
-  meta: { title: "Web Push" },
+  meta: (user) => {
+    title: "🌍 Web Push Test Notification!";
+  },
   queueName: "notifications",
   jobName: "webPushNotification",
   batchSize: 1,
