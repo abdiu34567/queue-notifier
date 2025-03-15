@@ -49,10 +49,12 @@ describe("EmailNotifier", () => {
     const recipients = ["user1@example.com", "user2@example.com"];
 
     await expect(
-      notifier.send(recipients, {
-        subject: "Test Subject",
-        text: "Test Email Message",
-      })
+      notifier.send(recipients, [
+        {
+          subject: "Test Subject",
+          text: "Test Email Message",
+        },
+      ])
     ).resolves.not.toThrow();
 
     expect(sendMailMock).toHaveBeenCalledTimes(recipients.length);
@@ -73,10 +75,12 @@ describe("EmailNotifier", () => {
     );
 
     await expect(
-      notifier.send(manyRecipients, {
-        subject: "Test",
-        text: "Rate Limit Test",
-      })
+      notifier.send(manyRecipients, [
+        {
+          subject: "Test",
+          text: "Rate Limit Test",
+        },
+      ])
     ).resolves.not.toThrow();
 
     await new Promise((resolve) => setTimeout(resolve, 2000));

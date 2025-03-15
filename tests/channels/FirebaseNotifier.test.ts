@@ -54,7 +54,9 @@ describe("FirebaseNotifier", () => {
     const tokens = ["fake_token1", "fake_token2"];
 
     await expect(
-      notifier.send(tokens, { body: "Test notification", title: "Test Title" })
+      notifier.send(tokens, [
+        { body: "Test notification", title: "Test Title" },
+      ])
     ).resolves.not.toThrow();
 
     expect(sendEachForMulticastMock).toHaveBeenCalledTimes(1);
@@ -69,7 +71,7 @@ describe("FirebaseNotifier", () => {
     const manyTokens = Array.from({ length: 100 }, (_, i) => `fake_token_${i}`);
 
     await expect(
-      notifier.send(manyTokens, { body: "Rate limit test", title: "Test" })
+      notifier.send(manyTokens, [{ body: "Rate limit test", title: "Test" }])
     ).resolves.not.toThrow();
 
     expect(sendEachForMulticastMock).toHaveBeenCalled();

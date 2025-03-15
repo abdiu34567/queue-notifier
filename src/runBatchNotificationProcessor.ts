@@ -74,8 +74,6 @@ export interface DispatchNotificationOptions<
    *  - `html`: If sending an HTML email.
    *  - `data`: Custom data payload for Firebase/Web Push.
    */
-  //   meta: NotificationMeta[keyof NotificationMeta];
-  //   meta: NotificationMeta[N];
   meta: (user: T) => RequiredMeta[N];
 
   /**
@@ -181,7 +179,6 @@ export async function dispatchNotifications<
     options.dbQuery,
     async (records: T[]) => {
       const userIds = records.map(options.mapRecordToUserId);
-
       await QueueManager.enqueueJob(options.queueName, options.jobName, {
         userIds,
         channel: options.notifierType,

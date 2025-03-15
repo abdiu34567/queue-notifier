@@ -29,17 +29,16 @@ export class TelegramNotifier implements NotificationChannel {
     // Default options for sending messages
     const defaultOptions = { parse_mode: "MarkdownV2" };
 
-    // Allow additional Telegram options via meta.telegramOptions
-    const extraOptions = meta || {};
-
-    // Merge default and extra options (extraOptions takes precedence)
-    const sendOptions = {
-      ...defaultOptions,
-      ...extraOptions,
-    } as Partial<ExtraReplyMessage>;
-
     await Promise.all(
       users.map(async (user, index) => {
+        // Allow additional Telegram options via meta.telegramOptions
+        const extraOptions = meta[index] || {};
+
+        // Merge default and extra options (extraOptions takes precedence)
+        const sendOptions = {
+          ...defaultOptions,
+          ...extraOptions,
+        } as Partial<ExtraReplyMessage>;
         try {
           const response = await this.rateLimiter.schedule(() =>
             this.bot.telegram.sendMessage(user, meta[index].text, sendOptions)

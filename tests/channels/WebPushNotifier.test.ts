@@ -55,7 +55,7 @@ describe("WebPushNotifier", () => {
     ];
 
     await expect(
-      notifier.send(subscriptions, { title: "Hello!", body: "Test web push" })
+      notifier.send(subscriptions, [{ title: "Hello!", body: "Test web push" }])
     ).resolves.not.toThrow();
 
     expect(mockSendNotification).toHaveBeenCalledTimes(subscriptions.length);
@@ -86,10 +86,12 @@ describe("WebPushNotifier", () => {
     );
 
     await expect(
-      notifier.send(manySubscriptions, {
-        title: "Hello!",
-        body: "Rate limit test",
-      })
+      notifier.send(manySubscriptions, [
+        {
+          title: "Hello!",
+          body: "Rate limit test",
+        },
+      ])
     ).resolves.not.toThrow();
 
     expect(mockSendNotification).toHaveBeenCalled();
