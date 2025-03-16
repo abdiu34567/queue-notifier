@@ -34,9 +34,6 @@ export interface NotificationChannel {
 }
 
 export type ExtraReplyMessage = {
-  /**
-   * Text of the message to be sent
-   */
   text: string;
   message_thread_id?: number | undefined;
   parse_mode?: ParseMode | undefined;
@@ -122,19 +119,6 @@ export interface WebPush extends RequestOptions {
   body?: string;
   data?: Record<string, string>;
 }
-
-// export interface NotificationMeta {
-//   telegram: ExtraReplyMessage;
-//   email: MailOptions;
-//   firebase: FirebaseNotificationOptions;
-//   web: WebPush;
-// }
-
-// export type NotificationMeta = {
-//   [K in "telegram" | "email" | "firebase" | "web"]?: Partial<
-//     Record<keyof RequiredMeta[K], RequiredMeta[K][keyof RequiredMeta[K]]>
-//   >;
-// };
 
 export type NotificationMeta<T = any> = {
   [K in keyof RequiredMeta]: RequiredMeta[K] | ((user: T) => RequiredMeta[K]);

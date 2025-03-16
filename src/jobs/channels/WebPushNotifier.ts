@@ -33,26 +33,32 @@ export class WebPushNotifier implements NotificationChannel {
       JSON.parse(id)
     );
     const results: any[] = [];
+    const maxConcurrentSends = 5; // Limit concurrent Web Push notifications
+    let activeSends: Promise<void>[] = [];
 
-    await Promise.all(
-      subscriptions.map(async (subscription, index) => {
+    for (let i = 0; i < subscriptions.length; i++) {
+      const subscription = subscriptions[i];
+      const pushMeta = meta[i] || {};
+
+      const sendTask = this.rateLimiter.schedule(async () => {
         try {
-          // Ensure type safety
-          const webPushOptions: Partial<WebPush> = { ...meta[index] };
-          delete webPushOptions.title;
-          delete webPushOptions.body;
-          delete webPushOptions.data;
+          const pushPayload = JSON.stringify({
+            title: pushMeta.title || "Notification",
+            body: pushMeta.body,
+            data: pushMeta.data || {},
+          });
 
-          const response = await this.rateLimiter.schedule(() =>
-            webPush.sendNotification(
-              subscription,
-              JSON.stringify({
-                title: meta[index].title || "Notification",
-                body: meta[index].body,
-                data: meta[index].data || {},
-              }),
-              { ...(webPushOptions as RequestOptions) }
-            )
+          // Ensure only valid options are passed
+          const requestOptions: RequestOptions = {
+            TTL: pushMeta.TTL,
+            vapidDetails: pushMeta.vapidDetails,
+            headers: pushMeta.headers,
+          } as RequestOptions;
+
+          const response = await webPush.sendNotification(
+            subscription,
+            pushPayload,
+            requestOptions
           );
 
           Logger.log(
@@ -74,9 +80,17 @@ export class WebPushNotifier implements NotificationChannel {
             error: error.message,
           });
         }
-      })
-    );
+      });
 
+      activeSends.push(sendTask);
+
+      if (activeSends.length >= maxConcurrentSends) {
+        await Promise.race(activeSends);
+        activeSends = activeSends.filter((task) => !task.finally);
+      }
+    }
+
+    await Promise.all(activeSends);
     return results;
   }
 }

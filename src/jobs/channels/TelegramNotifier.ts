@@ -2,7 +2,6 @@ import { NotificationChannel, ExtraReplyMessage } from "./NotificationChannel";
 import { Telegraf } from "telegraf";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
-// import { ExtraReplyMessage } from "telegraf/typings/telegram-types";
 
 interface TelegramNotifierConfig {
   botToken: string;
@@ -25,25 +24,26 @@ export class TelegramNotifier implements NotificationChannel {
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const results: any[] = [];
+    const maxConcurrentMessages = 5; // Limit concurrent Telegram messages
+    let activeSends: Promise<void>[] = [];
 
-    // Default options for sending messages
-    const defaultOptions = { parse_mode: "MarkdownV2" };
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+      const extraOptions = meta[i] || {};
+      const sendOptions = {
+        parse_mode: "MarkdownV2",
+        ...extraOptions,
+      } as Partial<ExtraReplyMessage>;
 
-    await Promise.all(
-      users.map(async (user, index) => {
-        // Allow additional Telegram options via meta.telegramOptions
-        const extraOptions = meta[index] || {};
+      const messageText = meta[i]?.text || "No message content provided.";
 
-        // Merge default and extra options (extraOptions takes precedence)
-        const sendOptions = {
-          ...defaultOptions,
-          ...extraOptions,
-        } as Partial<ExtraReplyMessage>;
+      const sendTask = this.rateLimiter.schedule(async () => {
         try {
-          const response = await this.rateLimiter.schedule(() =>
-            this.bot.telegram.sendMessage(user, meta[index].text, sendOptions)
+          const response = await this.bot.telegram.sendMessage(
+            user,
+            messageText,
+            sendOptions
           );
-
           Logger.log(`📨 Telegram message sent to ${user}:`, response);
           results.push({ status: "success", recipient: user, response });
         } catch (error: any) {
@@ -54,9 +54,17 @@ export class TelegramNotifier implements NotificationChannel {
             error: error.message,
           });
         }
-      })
-    );
+      });
 
+      activeSends.push(sendTask);
+
+      if (activeSends.length >= maxConcurrentMessages) {
+        await Promise.race(activeSends);
+        activeSends = activeSends.filter((task) => !task.finally);
+      }
+    }
+
+    await Promise.all(activeSends);
     return results;
   }
 }

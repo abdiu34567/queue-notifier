@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import { dispatchNotifications } from "../src";
 import { NotificationChannel } from "../src/jobs/channels/NotificationChannel";
-import RedisClient from "../src/utils/RedisClient";
+import { RedisClient } from "../src/utils/RedisClient";
 import { Queue } from "bullmq";
 
 // 🚀 Set up Redis
@@ -21,6 +21,9 @@ class DummyWebPushNotifier implements NotificationChannel {
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     return userIds.map((subscription, index) => {
+      if (index > 1 && index < 4) {
+        console.log(subscription.split("_")[2], meta[index]);
+      }
       // Simulate a random 10% failure
       if (Math.random() < 0.1) {
         return {
@@ -79,7 +82,9 @@ const mapRecordToUserId = (record: { subscription: string }) =>
     notifierOptions: {}, // Not needed for the dummy
     dbQuery: mockDbQuery,
     mapRecordToUserId,
-    meta: () => ({ title: "System-Wide Announcement" }),
+    meta: (user) => ({
+      title: "System-Wide Announcement" + user.subscription.split("_")[2],
+    }),
     queueName: "webPushStressTestQueue",
     jobName: "webPushDummyNotification",
     batchSize,

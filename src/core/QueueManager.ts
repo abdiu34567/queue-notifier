@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import RedisClient from "../utils/RedisClient";
+import { RedisClient } from "../utils/RedisClient";
 
 export class QueueManager {
   private static queues: Map<string, Queue> = new Map();

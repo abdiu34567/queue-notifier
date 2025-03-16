@@ -1,6 +1,6 @@
 import Redis from "ioredis";
-import RedisClient from "./utils/RedisClient";
-import { processInBatches } from "./core/BatchProcessor";
+import { RedisClient } from "./utils/RedisClient";
+import { processInBatches, retryWithBackoff } from "./core/BatchProcessor";
 import { QueueManager } from "./core/QueueManager";
 import { WorkerManager } from "./core/WorkerManager";
 import { FirebaseNotifier } from "./jobs/channels/FirebaseNotifier";
@@ -14,6 +14,7 @@ import {
   NotificationMeta,
   RequiredMeta,
 } from "./jobs/channels/NotificationChannel";
+import { TokenBucketRateLimiter } from "./core/RateLimiter";
 
 /**
  * Configuration options for running batch notifications.
@@ -174,9 +175,19 @@ export async function dispatchNotifications<
   // 4. Register the notifier before enqueueing jobs
   NotifierRegistry.register(options.notifierType, notifier);
 
+  const rateLimiter = options.maxQueriesPerSecond
+    ? new TokenBucketRateLimiter(options.maxQueriesPerSecond)
+    : null;
+
   // 5. Process records in batches until no more results.
   await processInBatches<T>(
-    options.dbQuery,
+    // options.dbQuery,
+    async (offset, limit) => {
+      if (rateLimiter) {
+        await rateLimiter.acquire(); // Apply rate limiting
+      }
+      return await retryWithBackoff(() => options.dbQuery(offset, limit));
+    },
     async (records: T[]) => {
       const userIds = records.map(options.mapRecordToUserId);
       await QueueManager.enqueueJob(options.queueName, options.jobName, {

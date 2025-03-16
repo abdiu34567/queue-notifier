@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import { dispatchNotifications } from "../src";
 import { NotificationChannel } from "../src/jobs/channels/NotificationChannel";
-import RedisClient from "../src/utils/RedisClient";
+import { RedisClient } from "../src/utils/RedisClient";
 import { Queue } from "bullmq";
 
 // 🚀 Set up Redis
@@ -21,6 +21,10 @@ class DummyNotifier implements NotificationChannel {
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     return userIds.map((userId, index) => {
+      if (index > 1 && index < 4) {
+        console.log(userId.split("_")[1], meta[index]);
+      }
+
       if (Math.random() < 0.1) {
         // 🔥 Simulate 10% failure rate
         return {
@@ -76,8 +80,8 @@ const mapRecordToUserId = (record: { userId: string }) => record.userId;
     notifierOptions: {}, // Not needed when using a custom notifier
     dbQuery: mockDbQuery,
     mapRecordToUserId,
-    meta: () => ({
-      text: "Mass Notification Test 🚀",
+    meta: (user) => ({
+      text: "Mass Notification Test 🚀" + user.userId.split("_")[1],
       subject: "System-Wide Announcement",
     }),
     queueName: "stressTestQueue",

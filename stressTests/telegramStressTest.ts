@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import { dispatchNotifications } from "../src";
 import { NotificationChannel } from "../src/jobs/channels/NotificationChannel";
-import RedisClient from "../src/utils/RedisClient";
+import { RedisClient } from "../src/utils/RedisClient";
 import { Queue } from "bullmq";
 
 // 🚀 Set up Redis
@@ -76,7 +76,9 @@ const mapRecordToUserId = (record: { userId: string }) => record.userId;
     mapRecordToUserId,
     // We'll send a single message for all recipients:
     // message: "Mass Telegram Notification Test 🚀",
-    meta: (user) => ({ text: "Mass Telegram Notification Test 🚀" }),
+    meta: (user) => ({
+      text: "Mass Telegram Notification Test 🚀",
+    }),
     queueName: "telegramStressTestQueue",
     jobName: "telegramDummyNotification",
     batchSize,

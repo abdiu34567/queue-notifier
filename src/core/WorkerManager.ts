@@ -1,5 +1,5 @@
 import { Worker, Job } from "bullmq";
-import RedisClient from "../utils/RedisClient";
+import { RedisClient } from "../utils/RedisClient";
 import { NotifierRegistry } from "./NotifierRegistry";
 import { trackNotificationResponse } from "../utils/ResponseTrackers";
 import Logger from "../utils/Logger";

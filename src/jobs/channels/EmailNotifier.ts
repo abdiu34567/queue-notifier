@@ -1,11 +1,7 @@
 import nodemailer, { Transporter } from "nodemailer";
 import { RateLimiter } from "../../core/RateLimiter";
 import Logger from "../../utils/Logger";
-import {
-  MailOptions,
-  MailOptions1,
-  NotificationChannel,
-} from "./NotificationChannel";
+import { MailOptions, NotificationChannel } from "./NotificationChannel";
 import Mail from "nodemailer/lib/mailer";
 
 interface EmailNotifierConfig {
@@ -42,22 +38,28 @@ export class EmailNotifier implements NotificationChannel {
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const results: any[] = [];
+    const maxConcurrentEmails = 3; // Limits concurrent email sending
 
-    await Promise.all(
-      users.map(async (email, index) => {
+    let activeSends: Promise<void>[] = [];
+
+    for (let i = 0; i < users.length; i++) {
+      const email = users[i];
+      const emailMeta = meta[i] || {};
+
+      const sendTask = this.rateLimiter.schedule(async () => {
         try {
-          const emailOptions: Partial<MailOptions & MailOptions1> =
-            meta[index] || {};
-          delete emailOptions.to;
-          delete emailOptions.from;
+          const emailOptions: Mail.Options = {
+            from: this.config.from,
+            to: email,
+            subject: emailMeta.subject || "No Subject",
+            text: emailMeta.text || "",
+            html: emailMeta.html || "",
+            ...(emailMeta.attachments
+              ? { attachments: emailMeta.attachments }
+              : {}),
+          };
 
-          const info = await this.rateLimiter.schedule(() =>
-            this.transporter.sendMail({
-              from: this.config.from,
-              to: email,
-              ...(emailOptions as Mail.Options),
-            })
-          );
+          const info = await this.transporter.sendMail(emailOptions);
 
           Logger.log(`📨 Email sent to ${email}: ${info.messageId}`);
 
@@ -70,9 +72,17 @@ export class EmailNotifier implements NotificationChannel {
             error: err.message,
           });
         }
-      })
-    );
+      });
 
+      activeSends.push(sendTask);
+
+      if (activeSends.length >= maxConcurrentEmails) {
+        await Promise.race(activeSends);
+        activeSends = activeSends.filter((task) => !task.finally);
+      }
+    }
+
+    await Promise.all(activeSends);
     return results;
   }
 }

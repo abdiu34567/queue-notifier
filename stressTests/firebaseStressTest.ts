@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import { dispatchNotifications } from "../src";
 import { NotificationChannel } from "../src/jobs/channels/NotificationChannel";
-import RedisClient from "../src/utils/RedisClient";
+import { RedisClient } from "../src/utils/RedisClient";
 import { Queue } from "bullmq";
 
 // 🚀 Set up Redis
@@ -77,7 +77,9 @@ const mapRecordToUserId = (record: { token: string }) => record.token;
     notifierOptions: {}, // Not needed for the dummy
     dbQuery: mockDbQuery,
     mapRecordToUserId,
-    meta: () => ({ title: "System-Wide Announcement" }),
+    meta: (user) => ({
+      title: "System-Wide Announcement",
+    }),
     queueName: "firebaseStressTestQueue",
     jobName: "firebaseDummyNotification",
     batchSize,

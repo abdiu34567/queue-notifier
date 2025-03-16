@@ -1,5 +1,5 @@
 import Logger from "./Logger";
-import RedisClient from "./RedisClient";
+import { RedisClient } from "./RedisClient";
 
 export async function trackNotificationResponse(
   trackingKey: string,

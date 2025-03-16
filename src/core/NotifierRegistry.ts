@@ -4,6 +4,9 @@ export class NotifierRegistry {
   private static registry: Map<string, NotificationChannel> = new Map();
 
   static register(channelName: string, notifier: NotificationChannel) {
+    if (this.registry.has(channelName)) {
+      console.warn(`Notifier for ${channelName} is already registered.`);
+    }
     this.registry.set(channelName, notifier);
   }
 
@@ -12,5 +15,9 @@ export class NotifierRegistry {
     if (!notifier)
       throw new Error(`Notifier for ${channelName} not registered`);
     return notifier;
+  }
+
+  static unregister(channelName: string) {
+    this.registry.delete(channelName);
   }
 }

@@ -3,6 +3,7 @@ export { QueueManager } from "./core/QueueManager";
 export { WorkerManager } from "./core/WorkerManager";
 export { RateLimiter } from "./core/RateLimiter";
 export { NotifierRegistry } from "./core/NotifierRegistry";
+export { RedisClient } from "./utils/RedisClient";
 
 // Notification Channels
 export { TelegramNotifier } from "./jobs/channels/TelegramNotifier";
@@ -24,3 +25,5 @@ export {
   getNotificationStats,
   resetNotificationStats,
 } from "./utils/ResponseTrackers";
+
+export { startWorkerServer } from "./utils/StartWorkerServer";

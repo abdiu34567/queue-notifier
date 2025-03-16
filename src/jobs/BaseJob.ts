@@ -3,7 +3,7 @@ export abstract class BaseJob<TPayload = any> {
   payload: TPayload;
 
   constructor(payload: TPayload) {
-    this.payload = payload; // ✅ Now valid
+    this.payload = payload;
   }
 
   abstract execute(): Promise<void>;

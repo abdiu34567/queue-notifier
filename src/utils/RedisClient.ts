@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 import Logger from "./Logger";
 
-class RedisClient {
+export class RedisClient {
   private static instance: Redis | null = null;
 
   // Allow user to set their own instance
@@ -24,5 +24,3 @@ class RedisClient {
     return RedisClient.instance;
   }
 }
-
-export default RedisClient;

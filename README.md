@@ -156,7 +156,7 @@ await dispatchNotifications({
     return offset >= users.length ? [] : users.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.userId,
-  meta:(user) => ({text:"📢 Telegram Notification Test!"})
+  meta: (user) => ({ text: "📢 Telegram Notification Test!" }),
   queueName: "notifications",
   jobName: "telegramNotification",
   batchSize: 2,
@@ -244,9 +244,9 @@ await dispatchNotifications({
       : subscriptions.slice(offset, offset + limit);
   },
   mapRecordToUserId: (record) => record.subscription,
-  meta: (user) => {
+  meta: (user) => ({
     title: "🌍 Web Push Test Notification!";
-  },
+  }),
   queueName: "notifications",
   jobName: "webPushNotification",
   batchSize: 1,
@@ -268,6 +268,69 @@ await dispatchNotifications({
 - **`trackResponses`**: Default is `false` (if not specified).
 - **`trackingKey`**: Defaults to `"notifications:stats"` if not provided.
 - **`loggingEnabled`**: Defaults to `true`.
+
+---
+
+## 🚀 Starting the Worker Independently (On a Separate Server)
+
+In a distributed system, you may want to **dispatch notifications from one server** and **process them on a different server** (worker server).
+
+The `notify-worker-sdk` allows you to **easily start the worker on a separate instance** to process jobs asynchronously.
+
+### **🔧 Example: Starting the Worker Server**
+
+To start the worker **on a separate instance**, use the `startWorkerServer` function:
+
+```typescript
+import Redis from "ioredis";
+import { startWorkerServer } from "notify-worker-sdk";
+
+// Initialize Redis externally
+const redis = new Redis("redis://localhost:6379");
+
+// Start the worker to process jobs from the queue
+startWorkerServer({
+  redisInstance: redis,
+  queueName: "notifications",
+  concurrency: 20, // Adjust based on your system resources
+  notifiers: {
+    telegram: { botToken: process.env.BOT_TOKEN as string },
+    email: {
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: "your-email@gmail.com", pass: "your-password" },
+      from: "your-email@gmail.com",
+    },
+    firebase: { serviceAccount: require("./firebase-service-account.json") },
+    web: {
+      publicKey: "YOUR_PUBLIC_KEY",
+      privateKey: "YOUR_PRIVATE_KEY",
+      contactEmail: "admin@example.com",
+    },
+  },
+});
+
+console.log("✅ Worker server started successfully!");
+```
+
+### **🛠️ Configuration Options**
+
+| Option               | Type                                      | Required | Description                                        |
+| -------------------- | ----------------------------------------- | -------- | -------------------------------------------------- |
+| `redisInstance`      | `Redis`                                   | ✅       | External Redis instance used for job queueing      |
+| `queueName`          | `string`                                  | ✅       | The queue name that the worker will listen to      |
+| `concurrency`        | `number`                                  | ❌       | Number of jobs processed in parallel (default: 10) |
+| `notifiers.telegram` | `{ botToken: string }`                    | ❌       | Config for Telegram notifications                  |
+| `notifiers.email`    | `{ host, port, auth, from }`              | ❌       | Config for Email notifications                     |
+| `notifiers.firebase` | `{ serviceAccount: object }`              | ❌       | Firebase push notification config                  |
+| `notifiers.web`      | `{ publicKey, privateKey, contactEmail }` | ❌       | Web push notification config                       |
+
+### **📌 Notes**
+
+- The worker **must run on a separate server instance** for better scalability.
+- Redis must be **shared across all instances** to synchronize job processing.
+- You can **start multiple worker instances** to increase processing power.
 
 ---
 
