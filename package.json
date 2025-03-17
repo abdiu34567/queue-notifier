@@ -1,5 +1,5 @@
 {
-  "name": "notifyqueue",
+  "name": "queue-notifier",
   "version": "1.0.0",
   "description": "An SDK for handling notifications via Redis and job queues.",
   "main": "dist/index.js",
@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abdiu34567/notifyqueue.git"
+    "url": "git+https://github.com/abdiu34567/queue-notifier.git"
   },
   "author": "Abdi Urgessa",
   "license": "MIT",

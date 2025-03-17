@@ -1,6 +1,6 @@
-# NotifyQueue
+# queue-notifier
 
-**NotifyQueue** is a lightweight TypeScript library for dispatching notifications through multiple channels—`Firebase`, `Telegram Bot`, `Email`, and `Web Push`—using Redis-backed job queues (powered by `BullMQ`). It supports batch processing, rate limiting, response tracking, and configurable logging.
+**queue-notifier** is a lightweight TypeScript library for dispatching notifications through multiple channels—`Firebase`, `Telegram Bot`, `Email`, and `Web Push`—using Redis-backed job queues (powered by `BullMQ`). It supports batch processing, rate limiting, response tracking, and configurable logging.
 
 ---
 
@@ -24,7 +24,7 @@
 Install the SDK along with its required dependencies:
 
 ```bash
-npm install notifyqueue
+npm install queue-notifier
 ```
 
 > **Note:** Ensure you have a running Redis instance.
@@ -104,7 +104,7 @@ The SDK is configured using a single options object defined by the `DispatchNoti
 
 ```typescript
 import Redis from "ioredis";
-import { dispatchNotifications } from "notifyqueue";
+import { dispatchNotifications } from "queue-notifier";
 import serviceAccount from "./firebase-service-account.json";
 
 // Initialize Redis externally
@@ -141,7 +141,7 @@ await dispatchNotifications({
 
 ```typescript
 import Redis from "ioredis";
-import { dispatchNotifications } from "notifyqueue";
+import { dispatchNotifications } from "queue-notifier";
 
 // Initialize Redis externally
 const redis = new Redis("redis://localhost:6379");
@@ -173,7 +173,7 @@ await dispatchNotifications({
 
 ```typescript
 import Redis from "ioredis";
-import { dispatchNotifications } from "notifyqueue";
+import { dispatchNotifications } from "queue-notifier";
 
 // Initialize Redis externally
 const redis = new Redis("redis://localhost:6379");
@@ -215,7 +215,7 @@ await dispatchNotifications({
 
 ```typescript
 import Redis from "ioredis";
-import { dispatchNotifications } from "notifyqueue";
+import { dispatchNotifications } from "queue-notifier";
 
 // Initialize Redis externally
 const redis = new Redis("redis://localhost:6379");
@@ -275,7 +275,7 @@ await dispatchNotifications({
 
 In a distributed system, you may want to **dispatch notifications from one server** and **process them on a different server** (worker server).
 
-The `notifyqueue` allows you to **easily start the worker on a separate instance** to process jobs asynchronously.
+The `queue-notifier` allows you to **easily start the worker on a separate instance** to process jobs asynchronously.
 
 ### **🔧 Example: Starting the Worker Server**
 
@@ -283,7 +283,7 @@ To start the worker **on a separate instance**, use the `startWorkerServer` func
 
 ```typescript
 import Redis from "ioredis";
-import { startWorkerServer } from "notifyqueue";
+import { startWorkerServer } from "queue-notifier";
 
 // Initialize Redis externally
 const redis = new Redis("redis://localhost:6379");
@@ -342,6 +342,6 @@ MIT License © 2024
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Feel free to check the [issues page](https://github.com/abdiu34567/notifyqueue/issues).
+Contributions, issues, and feature requests are welcome. Feel free to check the [issues page](https://github.com/abdiu34567/queue-notifier/issues).
 
 ---
