@@ -1,6 +1,8 @@
-// Mock the RedisClient to return a dummy connection object
 jest.mock("../../src/utils/RedisClient", () => ({
-  getInstance: jest.fn(() => ({})),
+  RedisClient: {
+    getInstance: jest.fn(() => ({})),
+    setInstance: jest.fn(),
+  },
 }));
 
 const addMock = jest.fn().mockResolvedValue("jobId");
@@ -22,9 +24,6 @@ import { QueueManager } from "../../src/core/QueueManager";
 describe("QueueManager", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Also reset internal static state if needed (e.g., clear the map)
-    // (If your implementation doesn't provide a reset method, you might need to add one for testing.)
-    // For example: QueueManager.reset();
   });
 
   it("should create a new queue if it does not exist", () => {

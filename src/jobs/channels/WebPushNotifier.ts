@@ -38,22 +38,23 @@ export class WebPushNotifier implements NotificationChannel {
 
     for (let i = 0; i < subscriptions.length; i++) {
       const subscription = subscriptions[i];
-      const pushMeta = meta[i] || {};
+      const pushMeta = meta[i] ?? { title: "Notification", body: "", data: {} };
 
       const sendTask = this.rateLimiter.schedule(async () => {
         try {
           const pushPayload = JSON.stringify({
             title: pushMeta.title || "Notification",
-            body: pushMeta.body,
+            body: pushMeta.body || "",
             data: pushMeta.data || {},
           });
 
-          // Ensure only valid options are passed
-          const requestOptions: RequestOptions = {
-            TTL: pushMeta.TTL,
-            vapidDetails: pushMeta.vapidDetails,
-            headers: pushMeta.headers,
-          } as RequestOptions;
+          const requestOptions: RequestOptions = JSON.parse(
+            JSON.stringify({
+              TTL: pushMeta.TTL,
+              vapidDetails: pushMeta.vapidDetails,
+              headers: pushMeta.headers,
+            })
+          );
 
           const response = await webPush.sendNotification(
             subscription,
@@ -85,8 +86,8 @@ export class WebPushNotifier implements NotificationChannel {
       activeSends.push(sendTask);
 
       if (activeSends.length >= maxConcurrentSends) {
-        await Promise.race(activeSends);
-        activeSends = activeSends.filter((task) => !task.finally);
+        const completedTask = await Promise.race(activeSends);
+        activeSends = activeSends.filter((p: any) => p !== completedTask);
       }
     }
 

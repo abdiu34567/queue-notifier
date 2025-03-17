@@ -10,9 +10,12 @@ jest.mock("bullmq", () => ({
 }));
 
 jest.mock("../../src/utils/RedisClient", () => ({
-  getInstance: jest.fn().mockReturnValue({
-    redis: "mock-connection",
-  }),
+  RedisClient: {
+    getInstance: jest.fn().mockReturnValue({
+      redis: "mock-connection",
+    }),
+    setInstance: jest.fn(),
+  },
 }));
 
 jest.mock("../../src/core/NotifierRegistry", () => ({

@@ -6,6 +6,7 @@ import { WorkerManager } from "../core/WorkerManager";
 import { EmailNotifier } from "../jobs/channels/EmailNotifier";
 import { FirebaseNotifier } from "../jobs/channels/FirebaseNotifier";
 import { WebPushNotifier } from "../jobs/channels/WebPushNotifier";
+import Logger from "./Logger";
 
 interface WorkerConfig {
   redisInstance: Redis;
@@ -43,9 +44,9 @@ export function startWorkerServer(config: WorkerConfig): void {
         channel as keyof typeof notifierMap,
         new notifierMap[channel as keyof typeof notifierMap](options as any)
       );
-      console.log(`✅ Registered notifier: ${channel}`);
+      Logger.log(`✅ Registered notifier: ${channel}`);
     } else {
-      console.warn(
+      Logger.log(
         `⚠️ Unknown notifier type: ${channel}, skipping registration.`
       );
     }
@@ -57,5 +58,5 @@ export function startWorkerServer(config: WorkerConfig): void {
     concurrency: config.concurrency || 10, // Default concurrency to 10
   });
 
-  console.log(`🚀 Worker server started on queue: '${config.queueName}'`);
+  Logger.log(`🚀 Worker server started on queue: '${config.queueName}'`);
 }

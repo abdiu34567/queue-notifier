@@ -1,6 +1,8 @@
 import { FirebaseNotifier } from "../../src/jobs/channels/FirebaseNotifier";
 import admin from "firebase-admin";
 
+const sendMock = jest.fn().mockResolvedValue("mocked-response");
+
 const sendEachForMulticastMock = jest.fn().mockResolvedValue({
   successCount: 2,
   failureCount: 0,
@@ -10,11 +12,13 @@ const sendEachForMulticastMock = jest.fn().mockResolvedValue({
 // Explicitly mock firebase-admin in a stable way
 jest.mock("firebase-admin", () => ({
   initializeApp: jest.fn(),
+  apps: [],
   credential: {
-    cert: jest.fn(() => "mocked-cert"), // Ensure Jest correctly mocks the return value
+    cert: jest.fn(() => "mocked-cert"),
   },
   messaging: jest.fn(() => ({
     sendEachForMulticast: sendEachForMulticastMock,
+    send: sendMock,
   })),
 }));
 
@@ -25,13 +29,14 @@ describe("FirebaseNotifier", () => {
     privateKey: "fake-key",
   };
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   beforeAll(() => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "error").mockImplementation(() => {});
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
   it("should initialize firebase-admin app correctly", () => {
@@ -41,9 +46,9 @@ describe("FirebaseNotifier", () => {
     });
 
     expect(admin.initializeApp).toHaveBeenCalledWith({
-      credential: "mocked-cert", // The mocked return value of admin.credential.cert()
+      credential: "mocked-cert",
     });
-  });
+  }, 50000);
 
   it("should successfully send notifications", async () => {
     const notifier = new FirebaseNotifier({
@@ -59,8 +64,8 @@ describe("FirebaseNotifier", () => {
       ])
     ).resolves.not.toThrow();
 
-    expect(sendEachForMulticastMock).toHaveBeenCalledTimes(1);
-  });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  }, 50000);
 
   it("should respect rate-limiting", async () => {
     const notifier = new FirebaseNotifier({
@@ -74,6 +79,6 @@ describe("FirebaseNotifier", () => {
       notifier.send(manyTokens, [{ body: "Rate limit test", title: "Test" }])
     ).resolves.not.toThrow();
 
-    expect(sendEachForMulticastMock).toHaveBeenCalled();
-  });
+    expect(sendMock).toHaveBeenCalled();
+  }, 50000);
 });

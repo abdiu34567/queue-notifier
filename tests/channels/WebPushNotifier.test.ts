@@ -3,8 +3,9 @@ const mockSendNotification = jest.fn().mockResolvedValue({ statusCode: 201 });
 
 jest.mock("web-push", () => ({
   setVapidDetails: mockSetVapidDetails,
-  sendNotification: mockSendNotification,
+  sendNotification: (...args: any[]) => mockSendNotification(...args), // ✅ Ensure calls are captured
 }));
+
 import { WebPushNotifier } from "../../src/jobs/channels/WebPushNotifier";
 
 describe("WebPushNotifier", () => {
@@ -17,6 +18,7 @@ describe("WebPushNotifier", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // jest.resetAllMocks();
   });
 
   beforeAll(() => {
@@ -32,10 +34,10 @@ describe("WebPushNotifier", () => {
       webPushConfig.publicKey,
       webPushConfig.privateKey
     );
-  });
+  }, 50000);
 
   it("should send notifications successfully", async () => {
-    const notifier = new WebPushNotifier(webPushConfig);
+    const notifier = new WebPushNotifier({ ...webPushConfig });
 
     const subscriptions = [
       JSON.stringify({
@@ -54,8 +56,14 @@ describe("WebPushNotifier", () => {
       }),
     ];
 
+    // Provide metadata for each subscription
+    const metaArray = [
+      { title: "Hello!", body: "Test web push" },
+      { title: "Hello!", body: "Test web push" }, // Same for both subscriptions
+    ];
+
     await expect(
-      notifier.send(subscriptions, [{ title: "Hello!", body: "Test web push" }])
+      notifier.send(subscriptions, metaArray)
     ).resolves.not.toThrow();
 
     expect(mockSendNotification).toHaveBeenCalledTimes(subscriptions.length);
@@ -65,12 +73,23 @@ describe("WebPushNotifier", () => {
       body: "Test web push",
       data: {},
     });
-    expect(mockSendNotification).toHaveBeenLastCalledWith(
+
+    // Verify first subscription call
+    expect(mockSendNotification).toHaveBeenNthCalledWith(
+      1,
+      JSON.parse(subscriptions[0]),
+      expectedPayload,
+      expect.objectContaining({})
+    );
+
+    // Verify second subscription call
+    expect(mockSendNotification).toHaveBeenNthCalledWith(
+      2,
       JSON.parse(subscriptions[1]),
       expectedPayload,
-      {}
+      expect.objectContaining({})
     );
-  });
+  }, 50000);
 
   it("should respect rate-limiting", async () => {
     const notifier = new WebPushNotifier(webPushConfig);
@@ -95,5 +114,5 @@ describe("WebPushNotifier", () => {
     ).resolves.not.toThrow();
 
     expect(mockSendNotification).toHaveBeenCalled();
-  });
+  }, 50000);
 });

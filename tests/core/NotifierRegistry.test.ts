@@ -17,10 +17,13 @@ class DummyNotifier implements NotificationChannel {
 }
 
 describe("NotifierRegistry", () => {
+  beforeAll(() => {
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
   beforeEach(() => {
-    // Clear the registry for a clean state before each test.
-    // Since our registry is a static Map without an explicit reset method,
-    // we can manually clear it using (NotifierRegistry as any).registry.clear()
     (NotifierRegistry as any).registry.clear();
   });
 

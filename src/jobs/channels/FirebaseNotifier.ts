@@ -56,7 +56,7 @@ export class FirebaseNotifier implements NotificationChannel {
               title: userMeta.title || "Default Notification",
               body: userMeta.body || "",
             },
-            ...(userMeta.data ? { data: userMeta.data } : {}), // Only include `data` if present
+            ...(userMeta.data ? { data: userMeta.data } : {}),
           });
 
           Logger.log(`📨 Firebase notification sent to ${userId}`);
