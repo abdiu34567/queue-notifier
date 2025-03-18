@@ -26,7 +26,6 @@ export async function processInBatches<T>(
   let activeBatches: Promise<void>[] = [];
 
   while (true) {
-    // Directly execute the batch query (RateLimiter is applied externally)
     const items = await processBatch(offset, batchSize);
 
     if (!items || items.length === 0) {
@@ -34,7 +33,6 @@ export async function processInBatches<T>(
       break;
     }
 
-    // Process batch in parallel without internal rate limiting
     const batchTask = handler(items);
     activeBatches.push(batchTask);
 

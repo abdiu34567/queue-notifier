@@ -1,10 +1,13 @@
-import { Worker } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import { WorkerManager } from "../../src/core/WorkerManager";
 import { NotifierRegistry } from "../../src/core/NotifierRegistry";
 
 jest.mock("bullmq", () => ({
   Worker: jest.fn().mockImplementation(() => ({
     on: jest.fn(),
+    close: jest.fn().mockResolvedValue(undefined),
+  })),
+  Queue: jest.fn().mockImplementation(() => ({
     close: jest.fn().mockResolvedValue(undefined),
   })),
 }));

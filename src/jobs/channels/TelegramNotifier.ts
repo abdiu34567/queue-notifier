@@ -34,9 +34,7 @@ export class TelegramNotifier implements NotificationChannel {
         parse_mode: "MarkdownV2",
         ...extraOptions,
       } as Partial<ExtraReplyMessage>;
-
       const messageText = meta[i]?.text || "No message content provided.";
-
       const sendTask = this.rateLimiter.schedule(async () => {
         try {
           const response = await this.bot.telegram.sendMessage(

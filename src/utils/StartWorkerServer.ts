@@ -7,6 +7,7 @@ import { EmailNotifier } from "../jobs/channels/EmailNotifier";
 import { FirebaseNotifier } from "../jobs/channels/FirebaseNotifier";
 import { WebPushNotifier } from "../jobs/channels/WebPushNotifier";
 import Logger from "./Logger";
+import { resetNotificationStats } from "./ResponseTrackers";
 
 interface WorkerConfig {
   redisInstance: Redis;
@@ -24,6 +25,12 @@ interface WorkerConfig {
     firebase?: { serviceAccount: any };
     web?: { publicKey: string; privateKey: string; contactEmail: string };
   };
+  onComplete?: (
+    job: any,
+    stats: Record<string, string>
+  ) => Promise<void> | void;
+  resetStatsAfterCompletion?: boolean;
+  onDrained?: () => Promise<void> | void;
 }
 
 export function startWorkerServer(config: WorkerConfig): void {
@@ -55,8 +62,25 @@ export function startWorkerServer(config: WorkerConfig): void {
   // Start Worker
   new WorkerManager({
     queueName: config.queueName,
-    concurrency: config.concurrency || 10, // Default concurrency to 10
-  });
+    concurrency: config.concurrency || 10,
+    onComplete: async (job, stats) => {
+      Logger.log(`📊 Job ${job.id} completed. Notification stats:`, stats);
 
-  Logger.log(`🚀 Worker server started on queue: '${config.queueName}'`);
+      if (config.onComplete) {
+        await config.onComplete(job, stats);
+      }
+
+      if (config.resetStatsAfterCompletion) {
+        await resetNotificationStats();
+      }
+    },
+    onDrained: async () => {
+      Logger.log(
+        `✅ Queue "${config.queueName}" is fully drained. No more jobs!`
+      );
+      if (config.onDrained) {
+        await config.onDrained();
+      }
+    },
+  });
 }

@@ -1,11 +1,12 @@
 import { NotificationChannel } from "../jobs/channels/NotificationChannel";
+import Logger from "../utils/Logger";
 
 export class NotifierRegistry {
   private static registry: Map<string, NotificationChannel> = new Map();
 
   static register(channelName: string, notifier: NotificationChannel) {
     if (this.registry.has(channelName)) {
-      console.warn(`Notifier for ${channelName} is already registered.`);
+      Logger.log(`Notifier for ${channelName} is already registered.`);
     }
     this.registry.set(channelName, notifier);
   }

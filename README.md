@@ -309,6 +309,17 @@ startWorkerServer({
       contactEmail: "admin@example.com",
     },
   },
+  // Called whenever a job completes
+  onComplete: async (job, stats) => {
+    console.log(`🔔 Job ${job.id} completed. Stats so far:`, stats);
+  },
+  // Called when queue is truly empty
+  onDrained: async () => {
+    // Retrieve final stats
+    const finalStats = await getNotificationStats("stressTest:stats");
+    console.log("📊 Final Notification Stats:", finalStats);
+    console.log("✅ Worker done processing all jobs. Shutting down...");
+  },
 });
 
 console.log("✅ Worker server started successfully!");
@@ -325,6 +336,8 @@ console.log("✅ Worker server started successfully!");
 | `notifiers.email`    | `{ host, port, auth, from }`              | ❌       | Config for Email notifications                     |
 | `notifiers.firebase` | `{ serviceAccount: object }`              | ❌       | Firebase push notification config                  |
 | `notifiers.web`      | `{ publicKey, privateKey, contactEmail }` | ❌       | Web push notification config                       |
+| `onComplete`         | `function`                                | ❌       | Called whenever a job completes                    |
+| `onDrained`          | `function`                                | ❌       | Called when queue is truly empty                   |
 
 ### **📌 Notes**
 
