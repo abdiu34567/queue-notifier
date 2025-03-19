@@ -37,10 +37,14 @@ export class EmailNotifier implements NotificationChannel {
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
-    const results: any[] = [];
+    const results: {
+      status: string;
+      recipient: string;
+      response?: any;
+      error?: string;
+    }[] = [];
     const maxConcurrentEmails = 3; // Limits concurrent email sending
-
-    let activeSends: Promise<void>[] = [];
+    const tasks: Promise<void>[] = [];
 
     for (let i = 0; i < users.length; i++) {
       const email = users[i];
@@ -62,7 +66,6 @@ export class EmailNotifier implements NotificationChannel {
           const info = await this.transporter.sendMail(emailOptions);
 
           Logger.log(`📨 Email sent to ${email}: ${info.messageId}`);
-
           results.push({ status: "success", recipient: email, response: info });
         } catch (err: any) {
           Logger.error(`❌ Email Error (Recipient ${email}):`, err.message);
@@ -74,15 +77,20 @@ export class EmailNotifier implements NotificationChannel {
         }
       });
 
-      activeSends.push(sendTask);
+      tasks.push(sendTask);
 
-      if (activeSends.length >= maxConcurrentEmails) {
-        await Promise.race(activeSends);
-        activeSends = activeSends.filter((task) => !task.finally);
+      // When we've reached our concurrency limit, wait for the batch to finish
+      if (tasks.length === maxConcurrentEmails) {
+        await Promise.all(tasks);
+        tasks.length = 0; // Clear the tasks array for the next batch
       }
     }
 
-    await Promise.all(activeSends);
+    // Await any remaining tasks that didn't form a full batch
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
+    }
+
     return results;
   }
 }

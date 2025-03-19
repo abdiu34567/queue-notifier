@@ -13,6 +13,7 @@ interface WorkerConfig {
   redisInstance: Redis;
   queueName: string;
   concurrency?: number;
+  loggingEnabled?: boolean;
   notifiers?: {
     telegram?: { botToken: string };
     email?: {
@@ -36,6 +37,9 @@ interface WorkerConfig {
 export function startWorkerServer(config: WorkerConfig): void {
   // Set Redis instance in SDK
   RedisClient.setInstance(config.redisInstance);
+
+  // Configure logging based on config (default is enabled)
+  Logger.enableLogging(config.loggingEnabled ?? true);
 
   // **Dynamically register all notifiers provided by the user**
   const notifierMap = {

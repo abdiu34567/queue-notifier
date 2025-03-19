@@ -20,7 +20,7 @@ export async function processInBatches<T>(
   options?: BatchQueryOptions
 ): Promise<void> {
   const batchSize = options?.batchSize ?? 1000;
-  const maxConcurrentBatches = 3; // Process up to 3 batches in parallel
+  const maxConcurrentBatches = 3; // Process up to 3 batches concurrently
 
   let offset = 0;
   let activeBatches: Promise<void>[] = [];
@@ -29,24 +29,25 @@ export async function processInBatches<T>(
     const items = await processBatch(offset, batchSize);
 
     if (!items || items.length === 0) {
-      // No more records, break loop
-      break;
+      break; // No more records, stop looping
     }
 
     const batchTask = handler(items);
     activeBatches.push(batchTask);
 
-    // Wait if too many parallel batches are running
+    // If we've reached our concurrency limit, wait for all to finish
     if (activeBatches.length >= maxConcurrentBatches) {
-      await Promise.race(activeBatches);
-      activeBatches = activeBatches.filter((b) => !b.finally);
+      await Promise.all(activeBatches);
+      activeBatches = [];
     }
 
     offset += items.length;
   }
 
-  // Ensure all remaining batches are completed
-  await Promise.all(activeBatches);
+  // Wait for any remaining batches to complete
+  if (activeBatches.length > 0) {
+    await Promise.all(activeBatches);
+  }
 }
 
 export async function retryWithBackoff<T>(

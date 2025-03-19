@@ -20,9 +20,10 @@ const queueName = "notifications";
     redisInstance: redis,
     queueName,
     concurrency: 20,
+    loggingEnabled: false,
     notifiers: {
       telegram: {
-        botToken: "7530649******uGnlslcaAH8",
+        botToken: "7530649446:AAGlUC8tApHLy1yvNLh2c2q9uGnlslcaAH8",
       },
     },
     // Called whenever a job completes

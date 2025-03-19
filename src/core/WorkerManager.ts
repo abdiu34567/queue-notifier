@@ -40,8 +40,6 @@ export class WorkerManager {
     );
 
     this.worker.on("completed", async (job) => {
-      Logger.log(`✅ Job completed successfully: ${job.id}`);
-
       if (this.config.onComplete) {
         const stats = await getNotificationStats(); // Fetch stats on completion
         await this.config.onComplete(job, stats);
@@ -54,8 +52,6 @@ export class WorkerManager {
 
     // NEW: Fired when the queue is fully drained (no more jobs)
     this.worker.on("drained", async () => {
-      Logger.log(`✅ Queue "${this.config.queueName}" is fully drained!`);
-
       // Check if there are still active jobs before calling onDrained()
       let { active, waiting } = await this.queue.getJobCounts();
 

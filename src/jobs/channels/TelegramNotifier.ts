@@ -23,19 +23,25 @@ export class TelegramNotifier implements NotificationChannel {
   ): Promise<
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
-    const results: any[] = [];
+    const results: {
+      status: string;
+      recipient: string;
+      response?: any;
+      error?: string;
+    }[] = [];
     const maxConcurrentMessages = 5; // Limit concurrent Telegram messages
-    let activeSends: Promise<void>[] = [];
+    const tasks: Promise<void>[] = [];
 
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
       const extraOptions = meta[i] || {};
-      const sendOptions = {
+      const sendOptions: Partial<ExtraReplyMessage> = {
         parse_mode: "MarkdownV2",
         ...extraOptions,
-      } as Partial<ExtraReplyMessage>;
+      };
       const messageText = meta[i]?.text || "No message content provided.";
-      const sendTask = this.rateLimiter.schedule(async () => {
+
+      const task = this.rateLimiter.schedule(async () => {
         try {
           const response = await this.bot.telegram.sendMessage(
             user,
@@ -54,15 +60,20 @@ export class TelegramNotifier implements NotificationChannel {
         }
       });
 
-      activeSends.push(sendTask);
+      tasks.push(task);
 
-      if (activeSends.length >= maxConcurrentMessages) {
-        await Promise.race(activeSends);
-        activeSends = activeSends.filter((task) => !task.finally);
+      // When we've reached our concurrency limit, wait for the batch to finish
+      if (tasks.length === maxConcurrentMessages) {
+        await Promise.all(tasks);
+        tasks.length = 0; // Clear the tasks array
       }
     }
 
-    await Promise.all(activeSends);
+    // Await any remaining tasks that didn't form a full batch
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
+    }
+
     return results;
   }
 }

@@ -32,15 +32,20 @@ export class WebPushNotifier implements NotificationChannel {
     const subscriptions: PushSubscription[] = userIds.map((id) =>
       JSON.parse(id)
     );
-    const results: any[] = [];
+    const results: {
+      status: string;
+      recipient: string;
+      response?: any;
+      error?: string;
+    }[] = [];
     const maxConcurrentSends = 5; // Limit concurrent Web Push notifications
-    let activeSends: Promise<void>[] = [];
+    const tasks: Promise<void>[] = [];
 
     for (let i = 0; i < subscriptions.length; i++) {
       const subscription = subscriptions[i];
       const pushMeta = meta[i] ?? { title: "Notification", body: "", data: {} };
 
-      const sendTask = this.rateLimiter.schedule(async () => {
+      const task = this.rateLimiter.schedule(async () => {
         try {
           const pushPayload = JSON.stringify({
             title: pushMeta.title || "Notification",
@@ -48,6 +53,7 @@ export class WebPushNotifier implements NotificationChannel {
             data: pushMeta.data || {},
           });
 
+          // Clean up the request options to remove undefined fields.
           const requestOptions: RequestOptions = JSON.parse(
             JSON.stringify({
               TTL: pushMeta.TTL,
@@ -83,15 +89,20 @@ export class WebPushNotifier implements NotificationChannel {
         }
       });
 
-      activeSends.push(sendTask);
+      tasks.push(task);
 
-      if (activeSends.length >= maxConcurrentSends) {
-        const completedTask = await Promise.race(activeSends);
-        activeSends = activeSends.filter((p: any) => p !== completedTask);
+      // When we've reached the concurrency limit, wait for the batch to complete
+      if (tasks.length === maxConcurrentSends) {
+        await Promise.all(tasks);
+        tasks.length = 0; // Clear the tasks array for the next batch
       }
     }
 
-    await Promise.all(activeSends);
+    // Await any remaining tasks that didn't form a full batch
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
+    }
+
     return results;
   }
 }

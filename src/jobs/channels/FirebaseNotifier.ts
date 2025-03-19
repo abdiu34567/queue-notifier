@@ -42,13 +42,20 @@ export class FirebaseNotifier implements NotificationChannel {
     { status: string; recipient: string; response?: any; error?: string }[]
   > {
     const messaging = admin.messaging();
-    const results: any[] = [];
+    const results: {
+      status: string;
+      recipient: string;
+      response?: any;
+      error?: string;
+    }[] = [];
+    const maxConcurrentMessages = 5; // Define the concurrency limit
+    const tasks: Promise<void>[] = [];
 
     for (let i = 0; i < userIds.length; i++) {
       const userId = userIds[i];
       const userMeta = meta?.[i] || {};
 
-      await this.rateLimiter.schedule(async () => {
+      const task = this.rateLimiter.schedule(async () => {
         try {
           const response = await messaging.send({
             token: userId,
@@ -58,13 +65,8 @@ export class FirebaseNotifier implements NotificationChannel {
             },
             ...(userMeta.data ? { data: userMeta.data } : {}),
           });
-
           Logger.log(`📨 Firebase notification sent to ${userId}`);
-          results.push({
-            status: "success",
-            recipient: userId,
-            response,
-          });
+          results.push({ status: "success", recipient: userId, response });
         } catch (error: any) {
           Logger.error(
             `❌ Firebase Error (Token: ${userId}): ${error.message}`
@@ -76,15 +78,20 @@ export class FirebaseNotifier implements NotificationChannel {
           });
         }
       });
+
+      tasks.push(task);
+
+      if (tasks.length === maxConcurrentMessages) {
+        await Promise.all(tasks);
+        tasks.length = 0; // Clear the tasks array
+      }
+    }
+
+    // Await any remaining tasks that didn't form a full batch
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
     }
 
     return results;
-  }
-
-  // Utility function for chunking tokens
-  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
-    return Array.from({ length: Math.ceil(array.length / chunkSize) }, (_, i) =>
-      array.slice(i * chunkSize, i * chunkSize + chunkSize)
-    );
   }
 }

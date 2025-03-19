@@ -181,7 +181,6 @@ export async function dispatchNotifications<
 
   // 5. Process records in batches until no more results.
   await processInBatches<T>(
-    // options.dbQuery,
     async (offset, limit) => {
       if (rateLimiter) {
         await rateLimiter.acquire(); // Apply rate limiting
