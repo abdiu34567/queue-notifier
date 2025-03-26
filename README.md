@@ -96,6 +96,9 @@ The SDK is configured using a single options object defined by the `DispatchNoti
 - **`customNotifier?: NotificationChannel`**  
   _(Optional)_ Allows using a custom notifier instance instead of the default implementation.
 
+- **`jobDelay?: number`**  
+  _(Optional)_ Optional delay (in milliseconds) before the notification job is processed.
+
 ---
 
 ## Usage Examples
@@ -132,6 +135,7 @@ await dispatchNotifications({
   trackResponses: true,
   trackingKey: "notifications:stats",
   loggingEnabled: true,
+  delay: 604800000,
 });
 ```
 
@@ -164,6 +168,7 @@ await dispatchNotifications({
   startWorker: true,
   trackResponses: false,
   loggingEnabled: true,
+  delay: 604800000,
 });
 ```
 
@@ -206,6 +211,7 @@ await dispatchNotifications({
   trackResponses: true,
   trackingKey: "notifications:stats",
   loggingEnabled: true,
+  delay: 604800000,
 });
 ```
 
@@ -255,6 +261,7 @@ await dispatchNotifications({
   trackResponses: true,
   trackingKey: "notifications:stats",
   loggingEnabled: true,
+  delay:604800000
 });
 ```
 

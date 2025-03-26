@@ -137,6 +137,12 @@ export interface DispatchNotificationOptions<
 
   /** Allows users to provide a custom notifier instance */
   customNotifier?: NotificationChannel;
+
+  /**
+   * Optional delay (in milliseconds) before the notification job is processed.
+   * For example, to schedule the job to run one week later, set this to 604800000 (7 * 24 * 60 * 60 * 1000).
+   */
+  jobDelay?: number;
 }
 
 export async function dispatchNotifications<
@@ -195,6 +201,7 @@ export async function dispatchNotifications<
         meta: records.map((record) => options.meta(record)),
         trackResponses: options.trackResponses,
         trackingKey: options.trackingKey || "notifications:stats",
+        delay: options.jobDelay, // <-- new property for scheduling
       });
     },
     {

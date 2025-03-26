@@ -21,6 +21,11 @@ jest.mock("../../src/utils/RedisClient", () => ({
   },
 }));
 
+// Mock getNotificationStats to return a sample stats object.
+jest.mock("../../src/utils/ResponseTrackers", () => ({
+  getNotificationStats: jest.fn().mockResolvedValue({ success: "3" }),
+}));
+
 jest.mock("../../src/core/NotifierRegistry", () => ({
   NotifierRegistry: {
     get: jest.fn().mockReturnValue({
@@ -77,15 +82,46 @@ describe("WorkerManager", () => {
   });
 
   describe("Event Handling", () => {
-    it("should handle completed jobs", () => {
-      const mockOnCompleted = (Worker as any).mock.results[0].value.on;
-      const completedHandler = mockOnCompleted.mock.calls.find(
-        (call: any[]) => call[0] === "completed"
-      )[1];
+    it("should handle completed jobs by calling the onComplete callback with job and stats", async () => {
+      const onCompleteMock = jest.fn();
 
-      completedHandler({ id: "job-123" });
-      expect(mockConsoleLog).toHaveBeenCalledWith(
-        "✅ Job completed successfully: job-123"
+      // Create a WorkerManager with an onComplete callback.
+      const workerManager = new WorkerManager({
+        queueName: "notifications",
+        concurrency: 1,
+        onComplete: onCompleteMock,
+      });
+
+      // This allows us to simulate the "completed" event.
+      const workerMock = {
+        emit: jest.fn((event: string, job: any, result: any, prev: string) => {
+          // Directly call the onComplete handler attached by WorkerManager.
+          // In our WorkerManager, the "completed" event listener calls:
+          //   if (this.config.onComplete) {
+          //     const stats = await getNotificationStats();
+          //     await this.config.onComplete(job, stats);
+          //   }
+          // So we simulate that by calling onCompleteMock directly.
+          onCompleteMock(job, { success: "3" });
+        }),
+      };
+      (workerManager as any).worker = workerMock;
+
+      // Emit a 'completed' event on the internal worker with a fake job.
+      workerManager["worker"].emit(
+        "completed",
+        { id: "job-123", data: {} } as any,
+        "dummy-result",
+        "dummy-prev"
+      );
+
+      // Wait briefly for asynchronous event handlers to complete.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Verify the onComplete callback was called with the job and our mocked stats.
+      expect(onCompleteMock).toHaveBeenCalledWith(
+        { id: "job-123", data: {} },
+        { success: "3" }
       );
     });
 

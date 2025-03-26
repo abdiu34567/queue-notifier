@@ -19,6 +19,19 @@ jest.mock("bullmq", () => ({
   Queue: FakeQueue,
 }));
 
+// Overwrite QueueManager's internal queue storage for testing
+// (QueueManager as any).queues = new Map();
+// (QueueManager as any).queues.set("enqueueTest", new FakeQueue());
+
+interface NotificationJobData {
+  userIds: string[];
+  channel: string;
+  meta: any[];
+  trackResponses?: boolean;
+  trackingKey: string;
+  delay?: number;
+}
+
 import { QueueManager } from "../../src/core/QueueManager";
 
 describe("QueueManager", () => {
@@ -46,14 +59,37 @@ describe("QueueManager", () => {
   it("should enqueue a job successfully", async () => {
     const queueName = "enqueueTest";
     const jobName = "jobTest";
-    const jobData = { foo: "bar" };
+
+    // Provide a valid NotificationJobData object
+    const jobData: NotificationJobData = {
+      userIds: ["user1"],
+      channel: "telegram",
+      meta: [{ text: "hello" }],
+      trackingKey: "notifications:stats",
+      // trackResponses is optional, delay is optional
+    };
 
     await QueueManager.enqueueJob(queueName, jobName, jobData);
 
     expect(FakeQueue).toHaveBeenCalledWith(queueName, { connection: {} });
     expect(addMock).toHaveBeenCalledWith(jobName, jobData, {
+      delay: jobData.delay, // will be undefined if not provided
       removeOnComplete: true,
       removeOnFail: false,
     });
   });
+
+  //   it("should enqueue a job successfully", async () => {
+  //     const queueName = "enqueueTest";
+  //     const jobName = "jobTest";
+  //     const jobData = { foo: "bar" };
+
+  //     await QueueManager.enqueueJob(queueName, jobName, jobData);
+
+  //     expect(FakeQueue).toHaveBeenCalledWith(queueName, { connection: {} });
+  //     expect(addMock).toHaveBeenCalledWith(jobName, jobData, {
+  //       removeOnComplete: true,
+  //       removeOnFail: false,
+  //     });
+  //   });
 });
