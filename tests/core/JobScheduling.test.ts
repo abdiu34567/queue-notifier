@@ -1,6 +1,5 @@
 import { Queue } from "bullmq";
 import { QueueManager } from "../../src/core/QueueManager";
-import { RedisClient } from "../../src/utils/RedisClient";
 
 // Define an interface for our job data (if not already defined)
 interface NotificationJobData {

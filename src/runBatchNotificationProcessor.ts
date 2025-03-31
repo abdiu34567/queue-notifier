@@ -15,6 +15,7 @@ import {
   RequiredMeta,
 } from "./jobs/channels/NotificationChannel";
 import { TokenBucketRateLimiter } from "./core/RateLimiter";
+import { WorkerConfig } from "./utils/StartWorkerServer";
 
 /**
  * Configuration options for running batch notifications.
@@ -113,6 +114,11 @@ export interface DispatchNotificationOptions<
   startWorker?: boolean;
 
   /**
+   * Worker-specific configuration options.
+   */
+  workerConfig?: Omit<WorkerConfig, "queueName">;
+
+  /**
    * Whether to track responses from notification APIs (e.g., success/fail reasons).
    * If `true`, responses will be stored in Redis for analytics/debugging.
    * If `false`, responses will not be stored.
@@ -155,29 +161,24 @@ export async function dispatchNotifications<
   // 2. Configure Logger
   Logger.enableLogging(options.loggingEnabled ?? true); // Default: logging is ON
 
-  // 3. Create the notifier instance based on the specified type.
-  let notifier: NotificationChannel;
+  // 3. Setup notifier instance
+  const notifier =
+    options.customNotifier ??
+    ((): NotificationChannel => {
+      switch (options.notifierType) {
+        case "firebase":
+          return new FirebaseNotifier(options.notifierOptions);
+        case "telegram":
+          return new TelegramNotifier(options.notifierOptions);
+        case "email":
+          return new EmailNotifier(options.notifierOptions);
+        case "web":
+          return new WebPushNotifier(options.notifierOptions);
+        default:
+          throw new Error("Unsupported notifier type");
+      }
+    })();
 
-  if (options.customNotifier) {
-    notifier = options.customNotifier; // ✅ Use custom notifier if provided
-  } else {
-    switch (options.notifierType) {
-      case "firebase":
-        notifier = new FirebaseNotifier(options.notifierOptions);
-        break;
-      case "telegram":
-        notifier = new TelegramNotifier(options.notifierOptions);
-        break;
-      case "email":
-        notifier = new EmailNotifier(options.notifierOptions);
-        break;
-      case "web":
-        notifier = new WebPushNotifier(options.notifierOptions);
-        break;
-      default:
-        throw new Error("Unsupported notifier type");
-    }
-  }
   // 4. Register the notifier before enqueueing jobs
   NotifierRegistry.register(options.notifierType, notifier);
 
@@ -201,7 +202,7 @@ export async function dispatchNotifications<
         meta: records.map((record) => options.meta(record)),
         trackResponses: options.trackResponses,
         trackingKey: options.trackingKey || "notifications:stats",
-        delay: options.jobDelay, // <-- new property for scheduling
+        delay: options.jobDelay,
       });
     },
     {
@@ -210,8 +211,11 @@ export async function dispatchNotifications<
     }
   );
 
-  // 6. Optionally start the worker to process the enqueued jobs.
+  // 6. Optionally start worker using provided configurations
   if (options.startWorker) {
-    new WorkerManager({ queueName: options.queueName });
+    new WorkerManager({
+      queueName: options.queueName,
+      ...(options.workerConfig || {}),
+    });
   }
 }

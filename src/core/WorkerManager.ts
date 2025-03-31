@@ -6,6 +6,7 @@ import {
   trackNotificationResponse,
 } from "../utils/ResponseTrackers";
 import Logger from "../utils/Logger";
+import { SimulationManager } from "./SimulationManager";
 
 interface WorkerConfig {
   queueName: string;
@@ -77,7 +78,29 @@ export class WorkerManager {
 
   private async jobProcessor(job: Job): Promise<void> {
     const { userIds, channel, meta, trackResponses, trackingKey } = job.data;
+
+    // Dynamically read simulation mode via SimulationManager
+    if (await SimulationManager.isSimulationEnabled()) {
+      Logger.log(
+        `🔄 [Simulated] Processing job ${job.id} for channel ${channel}.`
+      );
+
+      // Optionally, simulate a response (e.g., mark all as successful)
+      const simulatedResponse = userIds.map((id: any) => ({
+        status: "success",
+        recipient: id,
+        response: "Simulated delivery",
+      }));
+
+      if (trackResponses && simulatedResponse) {
+        await trackNotificationResponse(trackingKey, simulatedResponse);
+      }
+
+      return; // End processing without calling notifier.send()
+    }
+
     const notifier = NotifierRegistry.get(channel);
+
     try {
       const response = await notifier.send(userIds, meta);
       if (trackResponses && response) {

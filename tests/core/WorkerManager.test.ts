@@ -15,7 +15,8 @@ jest.mock("bullmq", () => ({
 jest.mock("../../src/utils/RedisClient", () => ({
   RedisClient: {
     getInstance: jest.fn().mockReturnValue({
-      redis: "mock-connection",
+      get: jest.fn().mockResolvedValue(null), // add this line
+      set: jest.fn().mockResolvedValue("OK"), // add this line (optional, for completeness)
     }),
     setInstance: jest.fn(),
   },
@@ -95,13 +96,6 @@ describe("WorkerManager", () => {
       // This allows us to simulate the "completed" event.
       const workerMock = {
         emit: jest.fn((event: string, job: any, result: any, prev: string) => {
-          // Directly call the onComplete handler attached by WorkerManager.
-          // In our WorkerManager, the "completed" event listener calls:
-          //   if (this.config.onComplete) {
-          //     const stats = await getNotificationStats();
-          //     await this.config.onComplete(job, stats);
-          //   }
-          // So we simulate that by calling onCompleteMock directly.
           onCompleteMock(job, { success: "3" });
         }),
       };

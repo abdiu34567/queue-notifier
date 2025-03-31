@@ -9,7 +9,7 @@ import { WebPushNotifier } from "../jobs/channels/WebPushNotifier";
 import Logger from "./Logger";
 import { resetNotificationStats } from "./ResponseTrackers";
 
-interface WorkerConfig {
+export interface WorkerConfig {
   redisInstance: Redis;
   queueName: string;
   concurrency?: number;

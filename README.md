@@ -261,7 +261,7 @@ await dispatchNotifications({
   trackResponses: true,
   trackingKey: "notifications:stats",
   loggingEnabled: true,
-  delay:604800000
+  delay:604800000,
 });
 ```
 
@@ -351,6 +351,69 @@ console.log("✅ Worker server started successfully!");
 - The worker **must run on a separate server instance** for better scalability.
 - Redis must be **shared across all instances** to synchronize job processing.
 - You can **start multiple worker instances** to increase processing power.
+
+---
+
+## 📌 Simulation Manager
+
+The `SimulationManager` enables or disables the simulation mode dynamically. Simulation mode allows your worker to process notification jobs without actually sending notifications—perfect for testing scenarios and avoiding accidental messages to users.
+
+### Usage
+
+To enable simulation mode dynamically:
+
+```typescript
+import { SimulationManager } from "queue-notifier";
+
+// Enable simulation mode
+await SimulationManager.enableSimulation();
+
+// Check simulation status
+const isSimulating = await SimulationManager.isSimulationEnabled();
+console.log(`Simulation mode: ${isSimulating}`);
+
+// Disable simulation mode
+await SimulationManager.disableSimulation();
+```
+
+---
+
+## 📊 Response Trackers
+
+Track responses and notification outcomes effectively with built-in tracking utilities:
+
+### Get Notification Stats
+
+Retrieve the current statistics for notifications sent (successes and failures):
+
+```typescript
+import { getNotificationStats } from "queue-notifier";
+
+const stats = await getNotificationStats();
+console.log("Notification stats:", stats);
+```
+
+**Default Redis Key:** `notifications:stats`
+
+You can specify a custom tracking key if desired:
+
+```typescript
+const stats = await getNotificationStats("custom:tracking:key");
+```
+
+### Reset Notification Stats
+
+Clear existing notification statistics:
+
+```typescript
+import { resetNotificationStats } from "queue-notifier";
+
+await resetNotificationStats();
+// OR using custom tracking key
+await resetNotificationStats("custom:tracking:key");
+```
+
+After reset, the stats tracking restarts cleanly from zero.
 
 ---
 
