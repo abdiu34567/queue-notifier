@@ -60,7 +60,7 @@ The SDK is configured using a single options object defined by the `DispatchNoti
 - **`message: string`**  
   _Required._ Notification content to be sent.
 
-- **`meta?: Record<string, any>`**  
+- **`meta?: (user: T) => RequiredMeta[N]`**  
   Optional metadata (e.g., `subject` for emails, `title` for push notifications, `html` for emails).
 
 - **`queueName: string`**  
@@ -80,6 +80,9 @@ The SDK is configured using a single options object defined by the `DispatchNoti
 - **`startWorker?: boolean`**  
   Whether to automatically start a worker to process jobs.  
   **Default:** `false`.
+
+- **`workerConfig?: Omit<WorkerConfig, "queueName">`**  
+  Worker-specific configuration options.
 
 - **`trackResponses?: boolean`**  
   Whether to track API responses in Redis for analytics/debugging.  
@@ -165,8 +168,19 @@ await dispatchNotifications({
   jobName: "telegramNotification",
   batchSize: 2,
   maxQueriesPerSecond: 5,
-  startWorker: true,
+  startWorker: false,
+  workerConfig: {
+    concurrency: 10,
+    resetStatsAfterCompletion: true,
+    onComplete: async (job, stats) => {
+      /** ... */
+    },
+    onDrained: async () => {
+      /** ... */
+    },
+  },
   trackResponses: false,
+  trackingKey: "notifications:stats",
   loggingEnabled: true,
   delay: 604800000,
 });

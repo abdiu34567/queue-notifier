@@ -27,3 +27,5 @@ export {
 } from "./utils/ResponseTrackers";
 
 export { startWorkerServer } from "./utils/StartWorkerServer";
+
+export { SimulationManager } from "./core/SimulationManager";
