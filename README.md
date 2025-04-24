@@ -1,9 +1,3 @@
-Okay, great! Let's update the README based on all the changes we've made (structured logging, removal of `startWorker`, addition of `batchSender`, `campaignId`, updated notifier configs, removal of `SimulationManager` in favor of cancellation keys, etc.).
-
-Here's a revised README.md:
-
----
-
 # Queue Notifier SDK
 
 **Queue Notifier SDK** is a TypeScript library designed for efficiently dispatching large volumes of notifications through multiple channels—Firebase (FCM), Telegram, Email, and Web Push—using reliable Redis-backed job queues powered by `BullMQ`. It simplifies batch processing of recipients queried from a database, includes rate limiting, supports campaign cancellation, and features configurable structured logging.
@@ -341,18 +335,54 @@ async function checkStats() {
 checkStats();
 ```
 
-### Logging Configuration
+---
 
-Logging uses `pino` for structured JSON output.
+## 🪵 Logging
 
-- **Level:** Control verbosity via the `LOG_LEVEL` environment variable (e.g., `LOG_LEVEL=debug`) or programmatically:
+The SDK uses [`pino`](https://getpino.io/) for efficient, structured JSON logging.
+
+**Log Output:**
+
+- **Production (`NODE_ENV=production`):** Logs are output as standard JSON lines, suitable for log collection systems (Datadog, Splunk, ELK, etc.).
+  ```json
+  {
+    "level": "info",
+    "time": "2023-10-27T10:00:00.123Z",
+    "pid": 123,
+    "hostname": "server-1",
+    "component": "WorkerManager",
+    "queue": "my-queue",
+    "msg": "Worker listening."
+  }
+  ```
+- **Development (Other `NODE_ENV` or unset):**
+  - **If `pino-pretty` is detected:** If you have installed `pino-pretty` as a dev dependency in your project (`npm i --save-dev pino-pretty` or `yarn add --dev pino-pretty`), the SDK will automatically detect it and format logs for better readability in your console during development.
+    ```
+    [2023-10-27 10:00:00.123 INFO] (WorkerManager on my-queue): Worker listening.
+    ```
+  - **If `pino-pretty` is NOT detected:** The SDK will output standard JSON logs and print a warning suggesting you install `pino-pretty` for a better development experience. You can still manually pipe the JSON output:
+    ```bash
+    node your-worker-script.js | pino-pretty
+    ```
+
+**Configuration:**
+
+- **Log Level:** Control the logging verbosity using the `LOG_LEVEL` environment variable. Supported levels: `fatal`, `error`, `warn`, `info` (default), `debug`, `trace`.
+
+  ```bash
+  # Example: Set level to debug
+  LOG_LEVEL=debug node your-worker-script.js
+  ```
+
+  You can also set the level programmatically (affects all loggers created by the factory _after_ the call):
+
   ```typescript
   import { loggerFactory } from "queue-notifier";
-  loggerFactory.setLevel("trace"); // Set level for all SDK loggers
+
+  loggerFactory.setLevel("debug"); // Set level for subsequent operations
   ```
-  Levels: `fatal`, `error`, `warn`, `info` (default), `debug`, `trace`.
-- **Pretty Printing (Dev):** Install `pino-pretty` (`npm i --save-dev pino-pretty`) and run your worker like:
-  `NODE_ENV=development node dist/worker.js | pino-pretty`
+
+- **Log Context:** Logs automatically include contextual information like `component` (e.g., `WorkerManager`, `EmailNotifier`), `queue`, `jobId`, `campaignId`, etc., where available.
 
 ---
 
