@@ -1,179 +1,297 @@
-import { Queue, Worker } from "bullmq";
-import { WorkerManager } from "../../src/core/WorkerManager";
-import { NotifierRegistry } from "../../src/core/NotifierRegistry";
+const dummyLogFn = () => {};
+const dummyLogger = {
+  fatal: dummyLogFn,
+  error: dummyLogFn,
+  warn: dummyLogFn,
+  info: dummyLogFn,
+  debug: dummyLogFn,
+  trace: dummyLogFn,
+  child: jest.fn().mockImplementation(() => dummyLogger),
+  setBindings: jest.fn(),
+} as any;
+jest.mock("../../src/utils/LoggerFactory", () => ({
+  loggerFactory: { createLogger: jest.fn().mockReturnValue(dummyLogger) },
+}));
 
+const mockRedisGet = jest.fn();
+const mockRedisQuit = jest.fn();
+const mockRedisInstance = {
+  options: { maxRetriesPerRequest: null },
+  status: "ready",
+  get: mockRedisGet,
+  quit: mockRedisQuit,
+  on: jest.fn(),
+  once: jest.fn(),
+  duplicate: jest.fn(() => mockRedisInstance),
+  connect: jest.fn().mockResolvedValue(undefined),
+} as any;
+jest.mock("../../src/utils/RedisHandler", () => ({
+  ensureRedisInstance: jest.fn().mockReturnValue(mockRedisInstance),
+}));
+
+const mockWorkerOn = jest.fn();
+const mockWorkerClose = jest.fn();
+const mockQueueClose = jest.fn();
+const mockQueueGetJobCounts = jest
+  .fn()
+  .mockResolvedValue({ active: 0, waiting: 0, delayed: 0 });
+const mockQueuePause = jest.fn().mockResolvedValue(undefined);
+const mockQueueResume = jest.fn().mockResolvedValue(undefined);
 jest.mock("bullmq", () => ({
-  Worker: jest.fn().mockImplementation(() => ({
-    on: jest.fn(),
-    close: jest.fn().mockResolvedValue(undefined),
+  Worker: jest.fn().mockImplementation((queueName, processor, options) => ({
+    on: mockWorkerOn,
+    close: mockWorkerClose,
   })),
-  Queue: jest.fn().mockImplementation(() => ({
-    close: jest.fn().mockResolvedValue(undefined),
+  Queue: jest.fn().mockImplementation((queueName, options) => ({
+    close: mockQueueClose,
+    getJobCounts: mockQueueGetJobCounts,
+    pause: mockQueuePause,
+    resume: mockQueueResume,
   })),
 }));
 
-jest.mock("../../src/utils/RedisClient", () => ({
-  RedisClient: {
-    getInstance: jest.fn().mockReturnValue({
-      get: jest.fn().mockResolvedValue(null), // add this line
-      set: jest.fn().mockResolvedValue("OK"), // add this line (optional, for completeness)
-    }),
-    setInstance: jest.fn(),
-  },
-}));
-
-// Mock getNotificationStats to return a sample stats object.
-jest.mock("../../src/utils/ResponseTrackers", () => ({
-  getNotificationStats: jest.fn().mockResolvedValue({ success: "3" }),
-}));
-
+const mockNotifierSend = jest.fn();
+const mockNotifier = { send: mockNotifierSend };
+const mockNotifierRegistryGet = jest.fn();
 jest.mock("../../src/core/NotifierRegistry", () => ({
   NotifierRegistry: {
-    get: jest.fn().mockReturnValue({
-      send: jest.fn().mockResolvedValue(undefined),
-    }),
+    get: mockNotifierRegistryGet,
   },
 }));
 
-const mockConsoleLog = jest.spyOn(console, "log").mockImplementation();
-const mockConsoleError = jest.spyOn(console, "error").mockImplementation();
+const mockTrackNotificationResponse = jest.fn();
+const mockGetNotificationStats = jest.fn();
+jest.mock("../../src/utils/ResponseTrackers", () => ({
+  trackNotificationResponse: mockTrackNotificationResponse,
+  getNotificationStats: mockGetNotificationStats,
+}));
+
+jest.mock("../../src/utils/RedisHandler", () => ({
+  ensureRedisInstance: jest.fn().mockReturnValue(mockRedisInstance),
+}));
+
+import {
+  WorkerManager,
+  WorkerManagerConfig,
+} from "../../src/core/WorkerManager";
+import { Job, Queue, Worker } from "bullmq";
+import Redis, { RedisOptions } from "ioredis";
+import { ensureRedisInstance } from "../../src/utils/RedisHandler";
 
 describe("WorkerManager", () => {
-  const baseConfig = { queueName: "notifications" };
-  let workerManager: WorkerManager;
+  const baseConfig = {
+    redisConnection: mockRedisInstance as Redis,
+    queueName: "test-queue",
+    concurrency: 5,
+    trackingKey: "test:stats",
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    workerManager = new WorkerManager(baseConfig);
+    mockNotifierRegistryGet.mockReturnValue(mockNotifier);
+    mockRedisGet.mockResolvedValue(null);
+    mockNotifierSend.mockResolvedValue([
+      { status: "success", recipient: "r1" },
+    ]);
   });
 
-  afterEach(async () => {
+  test("should initialize Redis, Queue, and Worker correctly", () => {
+    const workerManager = new WorkerManager(baseConfig);
+
+    expect(ensureRedisInstance).toHaveBeenCalledWith(
+      baseConfig.redisConnection,
+      expect.any(Object)
+    );
+    expect(Queue).toHaveBeenCalledWith(baseConfig.queueName, {
+      connection: mockRedisInstance,
+    });
+    expect(Worker).toHaveBeenCalledWith(
+      baseConfig.queueName,
+      expect.any(Function),
+      expect.objectContaining({
+        connection: mockRedisInstance,
+        concurrency: baseConfig.concurrency,
+      })
+    );
+    expect(mockWorkerOn).toHaveBeenCalledWith("active", expect.any(Function));
+    expect(mockWorkerOn).toHaveBeenCalledWith(
+      "completed",
+      expect.any(Function)
+    );
+    expect(mockWorkerOn).toHaveBeenCalledWith("failed", expect.any(Function));
+    expect(mockWorkerOn).toHaveBeenCalledWith("drained", expect.any(Function));
+  });
+
+  test("should merge bullWorkerOptions into Worker options", () => {
+    const specificWorkerOpts = {
+      lockDuration: 30000,
+      limiter: { max: 100, duration: 1000 },
+    };
+    const configWithBullOpts = {
+      ...baseConfig,
+      bullWorkerOptions: specificWorkerOpts,
+    };
+    const workerManager = new WorkerManager(configWithBullOpts);
+
+    expect(Worker).toHaveBeenCalledWith(
+      configWithBullOpts.queueName,
+      expect.any(Function),
+      expect.objectContaining({
+        connection: mockRedisInstance,
+        concurrency: configWithBullOpts.concurrency,
+        ...specificWorkerOpts,
+      })
+    );
+  });
+
+  const getProcessorFunction = (
+    manager: WorkerManager
+  ): ((job: Job) => Promise<void>) => {
+    const workerArgs = (Worker as any).mock.calls[0];
+    return workerArgs[1];
+  };
+
+  test("jobProcessor should call notifier.send for valid job", async () => {
+    const jobData = {
+      userIds: ["u1", "u2"],
+      channel: "email",
+      meta: [{}, {}],
+      trackingKey: "tk1",
+    };
+    const mockJob = { id: "job1", name: "send-email", data: jobData } as Job;
+    const workerManager = new WorkerManager(baseConfig);
+    const processor = getProcessorFunction(workerManager);
+
+    await processor(mockJob);
+
+    expect(mockNotifierRegistryGet).toHaveBeenCalledWith("email");
+    expect(mockNotifierSend).toHaveBeenCalledTimes(1);
+    expect(mockNotifierSend).toHaveBeenCalledWith(
+      ["u1", "u2"],
+      [{}, {}],
+      expect.any(Object)
+    );
+    expect(mockTrackNotificationResponse).not.toHaveBeenCalled();
+  });
+
+  test("jobProcessor should handle cancellation flag", async () => {
+    const jobData = {
+      userIds: ["u1"],
+      channel: "firebase",
+      meta: [{}],
+      campaignId: "cancel-me",
+    };
+    const mockJob = { id: "job2", name: "send-fcm", data: jobData } as Job;
+    mockRedisGet.mockResolvedValue("true");
+
+    const workerManager = new WorkerManager(baseConfig);
+    const processor = getProcessorFunction(workerManager);
+
+    await processor(mockJob);
+
+    expect(mockRedisGet).toHaveBeenCalledWith(
+      "worker:cancel:campaign:cancel-me"
+    );
+    expect(mockNotifierRegistryGet).not.toHaveBeenCalled();
+    expect(mockNotifierSend).not.toHaveBeenCalled();
+  });
+
+  test("jobProcessor should call tracker if trackResponses is true", async () => {
+    const jobData = {
+      userIds: ["u3"],
+      channel: "webpush",
+      meta: [{}],
+      trackResponses: true,
+      trackingKey: "webstats",
+    };
+    const mockJob = { id: "job3", name: "send-web", data: jobData } as Job;
+    const mockResponse = [{ status: "success", recipient: "u3", response: {} }];
+    mockNotifierSend.mockResolvedValue(mockResponse);
+    const workerManager = new WorkerManager(baseConfig);
+    const processor = getProcessorFunction(workerManager);
+
+    await processor(mockJob);
+
+    expect(mockNotifierSend).toHaveBeenCalledTimes(1);
+    expect(mockTrackNotificationResponse).toHaveBeenCalledTimes(1);
+    expect(mockTrackNotificationResponse).toHaveBeenCalledWith(
+      mockRedisInstance,
+      "webstats",
+      mockResponse,
+      expect.any(Object)
+    );
+  });
+
+  test("jobProcessor should throw and track error if notifier.send fails", async () => {
+    const jobData = {
+      userIds: ["u4"],
+      channel: "sms",
+      meta: [{}],
+      trackResponses: true,
+      trackingKey: "smsstats",
+    };
+    const mockJob = { id: "job4", name: "send-sms", data: jobData } as Job;
+    const sendError = new Error("SMS Gateway Timeout");
+    mockNotifierSend.mockRejectedValue(sendError);
+    const workerManager = new WorkerManager(baseConfig);
+    const processor = getProcessorFunction(workerManager);
+
+    await expect(processor(mockJob)).rejects.toThrow(sendError);
+
+    expect(mockNotifierSend).toHaveBeenCalledTimes(1);
+    expect(mockTrackNotificationResponse).toHaveBeenCalledTimes(1);
+    expect(mockTrackNotificationResponse).toHaveBeenCalledWith(
+      mockRedisInstance,
+      "smsstats",
+      { success: false, error: "SMS Gateway Timeout" },
+      expect.any(Object)
+    );
+  });
+
+  test("jobProcessor should throw if userIds is not an array", async () => {
+    const jobData = { userIds: "not-an-array", channel: "email", meta: [] };
+    const mockJob = { id: "job5", name: "bad-job", data: jobData } as Job;
+    const workerManager = new WorkerManager(baseConfig);
+    const processor = getProcessorFunction(workerManager);
+
+    await expect(processor(mockJob)).rejects.toThrow(
+      "Invalid userIds data in job job5"
+    );
+    expect(mockNotifierRegistryGet).not.toHaveBeenCalled();
+  });
+
+  test("close should call worker.close and queue.close", async () => {
+    const workerManager = new WorkerManager(baseConfig);
     await workerManager.close();
+    expect(mockWorkerClose).toHaveBeenCalledTimes(1);
+    expect(mockQueueClose).toHaveBeenCalledTimes(1);
   });
 
-  describe("Initialization", () => {
-    it("should create a worker with correct configuration", () => {
-      expect(Worker).toHaveBeenCalledWith(
-        "notifications",
-        expect.any(Function),
-        {
-          connection: {
-            enableReadyCheck: false,
-            maxRetriesPerRequest: null,
-          },
-          concurrency: 10,
-        }
-      );
-    });
-
-    it("should use custom concurrency when provided", () => {
-      new WorkerManager({ ...baseConfig, concurrency: 20 });
-      expect(Worker).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(Function),
-        expect.objectContaining({ concurrency: 20 })
-      );
-    });
-
-    it("should log successful startup", () => {
-      expect(mockConsoleLog).toHaveBeenCalledWith(
-        '🚀 Worker started listening on queue "notifications"'
-      );
-    });
-  });
-
-  describe("Event Handling", () => {
-    it("should handle completed jobs by calling the onComplete callback with job and stats", async () => {
-      const onCompleteMock = jest.fn();
-
-      // Create a WorkerManager with an onComplete callback.
-      const workerManager = new WorkerManager({
-        queueName: "notifications",
-        concurrency: 1,
-        onComplete: onCompleteMock,
-      });
-
-      // This allows us to simulate the "completed" event.
-      const workerMock = {
-        emit: jest.fn((event: string, job: any, result: any, prev: string) => {
-          onCompleteMock(job, { success: "3" });
-        }),
-      };
-      (workerManager as any).worker = workerMock;
-
-      // Emit a 'completed' event on the internal worker with a fake job.
-      workerManager["worker"].emit(
-        "completed",
-        { id: "job-123", data: {} } as any,
-        "dummy-result",
-        "dummy-prev"
-      );
-
-      // Wait briefly for asynchronous event handlers to complete.
-      await new Promise((resolve) => setImmediate(resolve));
-
-      // Verify the onComplete callback was called with the job and our mocked stats.
-      expect(onCompleteMock).toHaveBeenCalledWith(
-        { id: "job-123", data: {} },
-        { success: "3" }
-      );
-    });
-
-    it("should handle failed jobs", () => {
-      const mockOnFailed = (Worker as any).mock.results[0].value.on;
-      const errorHandler = mockOnFailed.mock.calls.find(
-        (call: any[]) => call[0] === "failed"
-      )[1];
-      const error = new Error("Notification failed");
-
-      errorHandler({ id: "job-456" }, error);
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        "❌ Job failed (job-456):",
-        error
-      );
-    });
-  });
-
-  describe("Job Processing", () => {
-    const mockJob = {
-      data: {
-        userIds: ["user1", "user2"],
-        message: "Test message",
-        channel: "web",
-        meta: { priority: "high", body: "Test message" },
-      },
+  test("close should call redis.quit if it owns the connection", async () => {
+    const configOwns: WorkerManagerConfig = {
+      ...baseConfig,
+      redisConnection: { host: "localhost", port: 6379 } as RedisOptions,
     };
 
-    it("should process jobs using the correct notifier", async () => {
-      const processor = (Worker as any).mock.calls[0][1];
-      await processor(mockJob);
+    const workerManager = new WorkerManager(configOwns);
+    expect((workerManager as any).ownsRedisConnection).toBe(true);
 
-      expect(NotifierRegistry.get).toHaveBeenCalledWith("web");
-      expect(NotifierRegistry.get("web").send).toHaveBeenCalledWith(
-        ["user1", "user2"],
-        { body: "Test message", priority: "high" }
-      );
-    });
+    mockRedisInstance.status = "ready";
+    await workerManager.close();
 
-    it("should handle missing metadata gracefully", async () => {
-      const processor = (Worker as any).mock.calls[0][1];
-      const jobWithoutMeta = {
-        ...mockJob,
-        data: { ...mockJob.data, meta: undefined },
-      };
-
-      await processor(jobWithoutMeta);
-      expect(NotifierRegistry.get("web").send).toHaveBeenCalledWith(
-        ["user1", "user2"],
-        undefined
-      );
-    });
+    expect(mockRedisQuit).toHaveBeenCalledTimes(1);
+    expect(ensureRedisInstance).toHaveBeenCalledWith(
+      configOwns.redisConnection,
+      expect.any(Object)
+    );
   });
 
-  describe("Shutdown", () => {
-    it("should close worker connections", async () => {
-      await workerManager.close();
-      expect(workerManager["worker"].close).toHaveBeenCalled();
-    });
+  test("close should NOT call redis.quit if it does not own the connection", async () => {
+    const workerManager = new WorkerManager(baseConfig);
+    (workerManager as any).ownsRedisConnection = false;
+    (workerManager as any).redisInstance = mockRedisInstance;
+
+    await workerManager.close();
+    expect(mockRedisQuit).not.toHaveBeenCalled();
   });
 });

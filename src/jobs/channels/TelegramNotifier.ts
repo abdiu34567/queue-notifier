@@ -1,7 +1,13 @@
-import { NotificationChannel, ExtraReplyMessage } from "./NotificationChannel";
 import { Telegraf } from "telegraf";
+import { Logger as PinoLogger } from "pino";
+import { loggerFactory } from "../../utils/LoggerFactory";
+import {
+  NotificationChannel,
+  NotificationResult,
+  TelegramMeta,
+} from "./NotificationChannel";
 import { RateLimiter } from "../../core/RateLimiter";
-import Logger from "../../utils/Logger";
+import { batchSender } from "../../core/BatchSender";
 
 interface TelegramNotifierConfig {
   botToken: string;
@@ -11,69 +17,130 @@ interface TelegramNotifierConfig {
 export class TelegramNotifier implements NotificationChannel {
   private bot: Telegraf;
   private rateLimiter: RateLimiter;
+  private baseLogger: PinoLogger;
 
   constructor(private config: TelegramNotifierConfig) {
-    this.bot = new Telegraf(config.botToken);
-    this.rateLimiter = new RateLimiter(config.maxMessagesPerSecond || 25, 1000);
+    this.baseLogger = loggerFactory.createLogger({
+      component: "TelegramNotifier",
+    });
+    this.baseLogger.info("Initializing...");
+
+    if (!config.botToken) {
+      const err = new Error("Telegram botToken is required.");
+      this.baseLogger.error({ err }, "Initialization failed.");
+      throw err;
+    }
+
+    try {
+      this.bot = new Telegraf(config.botToken);
+      this.baseLogger.info("Telegraf instance created.");
+    } catch (err) {
+      this.baseLogger.error({ err }, "Failed to create Telegraf instance.");
+      throw err;
+    }
+
+    const maxMessagesPerSecond = config.maxMessagesPerSecond || 25; // Default 25/sec for Telegram
+    this.rateLimiter = new RateLimiter(maxMessagesPerSecond, 1000);
+    this.baseLogger.info(
+      { rateLimit: maxMessagesPerSecond },
+      "Rate limiter configured."
+    );
   }
 
+  /**
+   * Sends Telegram messages using the batchSender utility.
+   */
   async send(
-    users: string[],
-    meta: ExtraReplyMessage[]
-  ): Promise<
-    { status: string; recipient: string; response?: any; error?: string }[]
-  > {
-    const results: {
-      status: string;
-      recipient: string;
-      response?: any;
-      error?: string;
-    }[] = [];
-    const maxConcurrentMessages = 5; // Limit concurrent Telegram messages
-    const tasks: Promise<void>[] = [];
+    chatIds: string[],
+    meta: TelegramMeta[],
+    logger: PinoLogger
+  ): Promise<NotificationResult[]> {
+    return batchSender.process(
+      chatIds,
+      meta,
+      this.rateLimiter,
+      this._sendSingleTelegramMessage.bind(this),
+      logger,
+      { concurrency: 5 }
+    );
+  }
 
-    for (let i = 0; i < users.length; i++) {
-      const user = users[i];
-      const extraOptions = meta[i] || {};
-      const sendOptions: Partial<ExtraReplyMessage> = {
-        parse_mode: "MarkdownV2",
-        ...extraOptions,
+  /**
+   * Sends a single Telegram message. Called by batchSender.
+   * @param chatId Recipient chat ID.
+   * @param userMeta Metadata for this specific message.
+   * @param taskLogger Logger instance with context for this specific task.
+   * @returns A NotificationResult object.
+   */
+  private async _sendSingleTelegramMessage(
+    chatId: string,
+    userMeta: TelegramMeta,
+    taskLogger: PinoLogger
+  ): Promise<NotificationResult> {
+    if (!userMeta || !userMeta.text) {
+      taskLogger.warn("Missing text in Telegram meta.");
+      return { status: "error", recipient: chatId, error: "MISSING_TEXT" };
+    }
+
+    const messageText = userMeta.text;
+    const { text, ...sendOptions } = userMeta;
+    const finalSendOptions: Partial<
+      Parameters<typeof this.bot.telegram.sendMessage>[2]
+    > = {
+      parse_mode: "HTML", // Default parse mode
+      ...sendOptions, // Spread remaining meta fields as options
+    };
+
+    try {
+      taskLogger.trace(
+        { options: finalSendOptions },
+        "Sending message via Telegraf..."
+      );
+      const response = await this.bot.telegram.sendMessage(
+        chatId,
+        messageText,
+        finalSendOptions
+      );
+      taskLogger.debug(
+        { messageId: response.message_id },
+        "Telegram message sent successfully."
+      );
+
+      return {
+        status: "success",
+        recipient: chatId,
+        response: response,
       };
-      const messageText = meta[i]?.text || "No message content provided.";
+    } catch (error: any) {
+      let errorMessage =
+        error.description || error.message || "Unknown Telegram error";
+      let statusCode: string | number =
+        error.code || error.response?.error_code || "N/A";
 
-      const task = this.rateLimiter.schedule(async () => {
-        try {
-          const response = await this.bot.telegram.sendMessage(
-            user,
-            messageText,
-            sendOptions
-          );
-          Logger.log(`📨 Telegram message sent to ${user}:`, response);
-          results.push({ status: "success", recipient: user, response });
-        } catch (error: any) {
-          Logger.error(`❌ Telegram Error (User ${user}):`, error.message);
-          results.push({
-            status: "failed",
-            recipient: user,
-            error: error.message,
-          });
-        }
-      });
+      taskLogger.warn(
+        { err: error, statusCode, description: error.description },
+        `Telegram send error.`
+      );
 
-      tasks.push(task);
+      // Sanitize the full original error message slightly
+      const sanitizedMessage = errorMessage
+        .replace(/\s+/g, "_")
+        .replace(/[.:;,*+?^${}()|[\]\\]/g, "");
 
-      // When we've reached our concurrency limit, wait for the batch to finish
-      if (tasks.length === maxConcurrentMessages) {
-        await Promise.all(tasks);
-        tasks.length = 0; // Clear the tasks array
-      }
+      // Construct the key BODY: <StatusCode>:<SanitizedFullErrorMessage>
+      const errorKeyBody = `${statusCode}:${sanitizedMessage}`;
+
+      return {
+        status: "error",
+        recipient: chatId,
+        error: errorKeyBody.substring(0, 255),
+        response: {
+          message: error.message,
+          description: error.description,
+          code: error.code,
+          responsePayload: error.response,
+        },
+      };
     }
-
-    // Await any remaining tasks that didn't form a full batch
-    if (tasks.length > 0) {
-      await Promise.all(tasks);
-    }
-
-    return results;
   }
 }

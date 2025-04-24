@@ -1,433 +1,358 @@
-# queue-notifier
+Okay, great! Let's update the README based on all the changes we've made (structured logging, removal of `startWorker`, addition of `batchSender`, `campaignId`, updated notifier configs, removal of `SimulationManager` in favor of cancellation keys, etc.).
 
-**queue-notifier** is a lightweight TypeScript library for dispatching notifications through multiple channels—`Firebase`, `Telegram Bot`, `Email`, and `Web Push`—using Redis-backed job queues (powered by `BullMQ`). It supports batch processing, rate limiting, response tracking, and configurable logging.
+Here's a revised README.md:
+
+---
+
+# Queue Notifier SDK
+
+**Queue Notifier SDK** is a TypeScript library designed for efficiently dispatching large volumes of notifications through multiple channels—Firebase (FCM), Telegram, Email, and Web Push—using reliable Redis-backed job queues powered by `BullMQ`. It simplifies batch processing of recipients queried from a database, includes rate limiting, supports campaign cancellation, and features configurable structured logging.
 
 ---
 
 ## Features
 
-- **Multi-channel Support:**
-  - Firebase, Telegram, Email, Web Push
-- **Redis-Powered Queue Management:**
-  - Leverages BullMQ for job processing
-- **Batch Processing & Rate Limiting:**
-  - Process large volumes of notifications efficiently
-- **Response Tracking:**
-  - Aggregates success and error responses in Redis
-- **Configurable Logging:**
-  - Enable or disable logging via the main configuration
+- **Multi-channel Notifications:** Send via Firebase (FCM), Telegram Bot, Email (SMTP), and Web Push.
+- **Robust Job Queueing:** Leverages Redis and `BullMQ` for persistent, scalable background job processing.
+- **Batch Database Processing:** Efficiently fetches recipients from your database in batches using a provided query function.
+- **Rate Limiting:** Built-in rate limiting for database queries and individual notifier channels.
+- **Structured Logging:** Uses `pino` for fast, JSON-based logging with configurable levels (`info`, `debug`, `trace`, etc.).
+- **Response Tracking:** (Optional) Aggregates success/error counts per channel in Redis hashes.
+- **Campaign Cancellation:** (Optional) Allows cancelling in-progress notification dispatches via Redis flags based on a `campaignId`.
+- **Clear Separation:** Distinct functions for dispatching jobs and running worker processes.
+
+---
+
+## Architecture
+
+The SDK promotes a standard producer-consumer pattern:
+
+1.  **Dispatcher (`dispatchNotifications`):** Your application code calls this function. It queries your database in batches, formats job data (including recipients and metadata), and enqueues these jobs into a BullMQ queue in Redis.
+2.  **Redis (BullMQ):** Acts as the persistent message broker holding the notification jobs.
+3.  **Worker (`startWorkerServer`):** A separate, long-running process (or multiple processes) that connects to Redis, listens to the queue, dequeues jobs, and uses the appropriate notifier (Email, Firebase, etc.) to send the notifications specified in the job data.
+
+```
++--------------------------+      +----------------+      +--------------------------+
+| Your Application         | ---> | Redis (BullMQ) | <--- | Worker Process(es)       |
+| (Calls                   |      | (Job Queue)    |      | (Runs startWorkerServer) |
+|  dispatchNotifications)  |      +----------------+      |  - Processes Jobs        |
++--------------------------+                              |  - Sends Notifications   |
+                                                          +--------------------------+
+```
 
 ---
 
 ## Installation
 
-Install the SDK along with its required dependencies:
+Install the SDK using npm or yarn. Required dependencies (`ioredis`, `bullmq`, `pino`) will be installed automatically.
 
 ```bash
+# Using npm
 npm install queue-notifier
+
+# Using yarn
+yarn add queue-notifier
 ```
 
-> **Note:** Ensure you have a running Redis instance.
-
 ---
 
-## Configuration Options
+## Core Concepts
 
-The SDK is configured using a single options object defined by the `DispatchNotificationOptions<T>` interface. Below are the available options with their defaults:
+### 1. Dispatching Notifications (`dispatchNotifications`)
 
-- **`redisInstance: Redis`**  
-  _Required._ Externally initialized Redis instance.
+This function is called from your main application logic to initiate the notification process.
 
-- **`notifierType: "firebase" | "telegram" | "email" | "web"`**  
-  _Required._ Specifies the notification channel.  
-  **Default:** No default (must be specified).
+**Configuration (`DispatchNotificationOptions<T, N>`):**
 
-- **`notifierOptions: any`**  
-  _Required._ Options specific to the notifier.  
-  Examples:
+- **`redisConnection: Redis | RedisOptions`**: _Required._ Your `ioredis` instance or connection options. If options are provided, ensure `maxRetriesPerRequest: null` is set for BullMQ compatibility (the SDK handles this if it creates the instance).
+- **`channelName: N`**: _Required._ The name of the target channel (e.g., `"firebase"`, `"email"`, `"telegram"`, `"web"`). Must match a notifier configured in your worker. `N` is a generic type constrained to keys of `NotificationMeta`.
+- **`dbQuery: (offset: number, limit: number) => Promise<T[]>`**: _Required._ Function to query your database for recipient records, supporting pagination (`offset`, `limit`). Returns an empty array when no more records are found. `T` is the generic type of your database record.
+- **`mapRecordToUserId: (record: T) => string`**: _Required._ Function to extract the unique recipient identifier (FCM token, email address, chat ID, stringified PushSubscription) from a database record (`T`).
+- **`meta: (user: T) => RequiredMeta[N]`**: _Required._ Function to generate the notification metadata _specific to the `channelName`_ for a given user record (`T`). The return type `RequiredMeta[N]` ensures type safety based on the channel. See `NotificationMeta` details below.
+- **`queueName: string`**: _Required._ Name of the BullMQ queue to add jobs to (e.g., `"notifications"`).
+- **`jobName: string`**: _Required._ Name for the jobs added to the queue (e.g., `"send-promo-email"`). Used for worker processing and monitoring.
+- **`campaignId?: string`**: _Optional._ A unique identifier for this specific dispatch operation (e.g., `"summer-sale-2024"`). If provided, you can use this ID to request cancellation of processing for this campaign via Redis (see Cancellation section).
+- **`batchSize?: number`**: Number of database records to fetch per `dbQuery` call. Default: `1000`.
+- **`maxQueriesPerSecond?: number`**: Rate limit for calling `dbQuery`. Uses a token bucket limiter. Default: No limit.
+- **`trackResponses?: boolean`**: Whether workers should track success/error counts in Redis. Default: `false`.
+- **`trackingKey?: string`**: Base Redis key for storing response counts if `trackResponses` is true. Default: `"notifications:stats"`. Job data can override this.
+- **`jobOptions?: JobsOptions`**: _Optional._ Pass BullMQ `JobsOptions` directly to customize job behavior (e.g., `{ attempts: 3, backoff: { type: 'exponential', delay: 1000 } }`, `{ delay: 60000 }`). See BullMQ documentation.
+- **`enqueueRetries?: number`**: Max retries for the _enqueue operation itself_ if Redis is temporarily unavailable during dispatch. Default: `3`.
+- **`enqueueBaseDelay?: number`**: Initial delay (ms) for enqueue retries. Default: `200`.
 
-  - **Firebase:** `{ serviceAccount: { ... } }`
-  - **Email:** `{ host: "smtp.example.com", port: 465, secure: true, auth: { user: "...", pass: "..." }, from: "..." }`
-  - **Telegram:** `{ botToken: "123456:ABC-DEF" }`
-  - **Web:** `{ publicKey: "...", privateKey: "...", contactEmail: "..." }`
-
-- **`dbQuery: (offset: number, limit: number) => Promise<T[]>`**  
-  _Required._ Function to query records (supports pagination).
-
-- **`mapRecordToUserId: (record: T) => string`**  
-  _Required._ Function to extract a unique user identifier (e.g., email, token, chat ID) from each record.
-
-- **`message: string`**  
-  _Required._ Notification content to be sent.
-
-- **`meta?: (user: T) => RequiredMeta[N]`**  
-  Optional metadata (e.g., `subject` for emails, `title` for push notifications, `html` for emails).
-
-- **`queueName: string`**  
-  _Required._ Name of the queue (e.g., `"notifications"`).
-
-- **`jobName: string`**  
-  _Required._ Name of the job (e.g., `"emailNotification"`).
-
-- **`batchSize?: number`**  
-  Number of records processed per batch.  
-  **Default:** Depends on the implementation (e.g., 1000 or user specified).
-
-- **`maxQueriesPerSecond?: number`**  
-  Rate limit for database queries.  
-  **Default:** Depends on user setting (e.g., 5 or user specified).
-
-- **`startWorker?: boolean`**  
-  Whether to automatically start a worker to process jobs.  
-  **Default:** `false`.
-
-- **`workerConfig?: Omit<WorkerConfig, "queueName">`**  
-  Worker-specific configuration options.
-
-- **`trackResponses?: boolean`**  
-  Whether to track API responses in Redis for analytics/debugging.  
-  **Default:** `false`.
-
-- **`trackingKey?: string`**  
-  Redis key to store aggregated response counts.  
-  **Default:** `"notifications:stats"`.
-
-- **`loggingEnabled?: boolean`**  
-  Controls logging throughout the SDK.  
-  **Default:** `true`.
-
-- **`customNotifier?: NotificationChannel`**  
-  _(Optional)_ Allows using a custom notifier instance instead of the default implementation.
-
-- **`jobDelay?: number`**  
-  _(Optional)_ Optional delay (in milliseconds) before the notification job is processed.
-
----
-
-## Usage Examples
-
-### **1. Firebase Notifications**
+**Example Dispatch Call:**
 
 ```typescript
 import Redis from "ioredis";
-import { dispatchNotifications } from "queue-notifier";
-import serviceAccount from "./firebase-service-account.json";
+import { dispatchNotifications, NotificationMeta } from "queue-notifier";
 
-// Initialize Redis externally
-const redis = new Redis("redis://localhost:6379");
+// Define your DB record type
+interface UserRecord {
+  id: number;
+  fcmToken: string;
+  name: string;
+}
+// Define your specific meta type (matches NotificationMeta['firebase'])
+type MyFirebaseMeta = NotificationMeta["firebase"];
 
-await dispatchNotifications({
-  redisInstance: redis,
-  notifierType: "firebase",
-  notifierOptions: { serviceAccount },
-  dbQuery: async (offset, limit) => {
-    // Example: Simulated database query returning Firebase tokens
-    const users = [
-      { userId: "firebase-token-1" },
-      { userId: "firebase-token-2" },
-    ];
-    return offset >= users.length ? [] : users.slice(offset, offset + limit);
-  },
-  mapRecordToUserId: (record) => record.userId,
-  meta: (user) => ({ title: "🔥 Firebase Alert" }),
-  queueName: "notifications",
-  jobName: "firebaseNotification",
-  batchSize: 2,
-  maxQueriesPerSecond: 5,
-  startWorker: true,
-  trackResponses: true,
-  trackingKey: "notifications:stats",
-  loggingEnabled: true,
-  delay: 604800000,
+const redis = new Redis({
+  /* ... your options, MUST include maxRetriesPerRequest: null ... */
 });
-```
 
----
+async function sendFcmPromo() {
+  const campaignId = `fcm-promo-${Date.now()}`;
+  console.log(`Dispatching campaign: ${campaignId}`);
 
-### **2. Telegram Notifications**
-
-```typescript
-import Redis from "ioredis";
-import { dispatchNotifications } from "queue-notifier";
-
-// Initialize Redis externally
-const redis = new Redis("redis://localhost:6379");
-
-await dispatchNotifications({
-  redisInstance: redis,
-  notifierType: "telegram",
-  notifierOptions: { botToken: "YOUR_TELEGRAM_BOT_TOKEN" },
-  dbQuery: async (offset, limit) => {
-    // Example: Simulated database query returning Telegram chat IDs
-    const users = [{ userId: "123456789" }, { userId: "987654321" }];
-    return offset >= users.length ? [] : users.slice(offset, offset + limit);
-  },
-  mapRecordToUserId: (record) => record.userId,
-  meta: (user) => ({ text: "📢 Telegram Notification Test!" }),
-  queueName: "notifications",
-  jobName: "telegramNotification",
-  batchSize: 2,
-  maxQueriesPerSecond: 5,
-  startWorker: false,
-  workerConfig: {
-    concurrency: 10,
-    resetStatsAfterCompletion: true,
-    onComplete: async (job, stats) => {
-      /** ... */
+  await dispatchNotifications<UserRecord, "firebase">({
+    redisConnection: redis,
+    channelName: "firebase", // Target channel
+    dbQuery: async (offset, limit): Promise<UserRecord[]> => {
+      console.log(`DB Query: offset=${offset}, limit=${limit}`);
+      // Replace with your actual database query logic
+      // Example: return await db.select('*').from('users').where('active', true).limit(limit).offset(offset);
+      const users: UserRecord[] = [
+        { id: 1, fcmToken: "token_1...", name: "Alice" },
+        { id: 2, fcmToken: "token_2...", name: "Bob" },
+      ]; // Sample
+      return offset >= users.length ? [] : users.slice(offset, offset + limit);
     },
-    onDrained: async () => {
-      /** ... */
-    },
-  },
-  trackResponses: false,
-  trackingKey: "notifications:stats",
-  loggingEnabled: true,
-  delay: 604800000,
-});
+    mapRecordToUserId: (record) => record.fcmToken, // Extract FCM token
+    meta: (user): MyFirebaseMeta => ({
+      // Return FirebaseMeta structure
+      title: `Hello ${user.name}!`,
+      body: "Check out our new promo!",
+      data: { userId: String(user.id), source: "promo-dispatch" },
+    }),
+    queueName: "fcm-notifications",
+    jobName: "send-fcm-promo", // Job type identifier
+    campaignId: campaignId, // For potential cancellation
+    batchSize: 500,
+    maxQueriesPerSecond: 10,
+    trackResponses: true,
+    jobOptions: { attempts: 2 }, // Example: Limit job processing attempts
+  });
+
+  console.log(`Campaign ${campaignId} dispatched.`);
+  // await redis.quit(); // Close connection if appropriate for your app
+}
+
+sendFcmPromo().catch(console.error);
 ```
 
----
+### 2. Running the Worker (`startWorkerServer`)
 
-### **3. Email Notifications**
+This function starts a long-running process that listens to a queue and processes jobs dispatched by `dispatchNotifications`. It should typically be run in a separate process/container.
 
-```typescript
-import Redis from "ioredis";
-import { dispatchNotifications } from "queue-notifier";
+**Configuration (`WorkerConfig`):**
 
-// Initialize Redis externally
-const redis = new Redis("redis://localhost:6379");
+- **`redisConnection: Redis | RedisOptions`**: _Required._ Connection to the same Redis used by the dispatcher. Must have `maxRetriesPerRequest: null`.
+- **`queueName: string`**: _Required._ The name of the queue to listen to (must match `queueName` used in `dispatchNotifications`).
+- **`notifiers: { ... }`**: _Required (at least one)._ Configuration object for the notifiers this worker should handle. The keys must match the `channelName`(s) used during dispatch.
+  - `telegram?: { botToken: string; maxMessagesPerSecond?: number; }`
+  - `email?: { host: string; port: number; secure: boolean; auth: { user: string; pass: string }; from: string; maxEmailsPerSecond?: number; }`
+  - `firebase?: ServiceAccount | string; maxMessagesPerSecond?: number;` (Pass Service Account object or path string)
+  - `web?: { publicKey: string; privateKey: string; contactEmail: string; maxMessagesPerSecond?: number; }`
+  - _(You can add custom notifiers by registering them manually with `NotifierRegistry` before/after starting the worker)_
+- **`concurrency?: number`**: Number of jobs this worker processes in parallel. Default: `10`.
+- **`trackingKey?: string`**: Default base Redis key for tracking stats if a job's data doesn't specify one. Default: `"notifications:stats"`.
+- **`resetStatsAfterCompletion?: boolean`**: If `true`, resets the stats hash associated with a job's `trackingKey` after the job completes successfully _and_ after the `onComplete` callback runs. Default: `false`.
+- **`onStart?: (job: Job, logger: PinoLogger) => Promise<void> | void`**: Optional async callback executed when a job begins processing. Receives the BullMQ `Job` object and a job-specific logger instance.
+- **`onComplete?: (job: Job, stats: Record<string, string>, logger: PinoLogger) => Promise<void> | void`**: Optional async callback executed after a job successfully completes _and_ stats (if tracked) are retrieved. Receives the `Job`, the fetched stats object, and a job-specific logger.
+- **`onDrained?: (logger: PinoLogger) => Promise<void> | void`**: Optional async callback executed when the queue becomes empty after having active jobs. Receives the base worker logger.
+- **`bullWorkerOptions?: Partial<BullMQWorkerOptions>`**: _Optional._ Pass advanced options directly to the underlying BullMQ `Worker` constructor (e.g., `{ lockDuration: 60000 }`). See BullMQ documentation.
 
-await dispatchNotifications({
-  redisInstance: redis,
-  notifierType: "email",
-  notifierOptions: {
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user: "test@gmail.com", pass: "password" },
-    from: "test@gmail.com",
-  },
-  dbQuery: async (offset, limit) => {
-    // Example: Simulated database query returning email addresses
-    const users = [
-      { userId: "user1@example.com" },
-      { userId: "user2@example.com" },
-    ];
-    return offset >= users.length ? [] : users.slice(offset, offset + limit);
-  },
-  mapRecordToUserId: (record) => record.userId,
-  meta: () => ({ subject: "Test Email Notification" }),
-  queueName: "notifications",
-  jobName: "emailNotification",
-  batchSize: 2,
-  maxQueriesPerSecond: 5,
-  startWorker: true,
-  trackResponses: true,
-  trackingKey: "notifications:stats",
-  loggingEnabled: true,
-  delay: 604800000,
-});
-```
-
----
-
-### **4. Web Push Notifications**
-
-```typescript
-import Redis from "ioredis";
-import { dispatchNotifications } from "queue-notifier";
-
-// Initialize Redis externally
-const redis = new Redis("redis://localhost:6379");
-
-await dispatchNotifications({
-  redisInstance: redis,
-  notifierType: "web",
-  notifierOptions: {
-    publicKey: "YOUR_PUBLIC_KEY",
-    privateKey: "YOUR_PRIVATE_KEY",
-    contactEmail: "admin@example.com",
-    maxMessagesPerSecond: 50,
-  },
-  dbQuery: async (offset, limit) => {
-    // Example: Simulated database query returning stringified subscriptions
-    const subscriptions = [
-      {
-        subscription: JSON.stringify({
-          endpoint: "https://example.com/endpoint1",
-          keys: { p256dh: "key1", auth: "auth1" },
-        }),
-      },
-    ];
-    return offset >= subscriptions.length
-      ? []
-      : subscriptions.slice(offset, offset + limit);
-  },
-  mapRecordToUserId: (record) => record.subscription,
-  meta: (user) => ({
-    title: "🌍 Web Push Test Notification!";
-  }),
-  queueName: "notifications",
-  jobName: "webPushNotification",
-  batchSize: 1,
-  maxQueriesPerSecond: 5,
-  startWorker: true,
-  trackResponses: true,
-  trackingKey: "notifications:stats",
-  loggingEnabled: true,
-  delay:604800000,
-});
-```
-
----
-
-## Default Values Summary
-
-- **`batchSize`**: User-defined (commonly 1000 or as needed).
-- **`maxQueriesPerSecond`**: User-defined (e.g., 5).
-- **`startWorker`**: Default is `false` (if not specified).
-- **`trackResponses`**: Default is `false` (if not specified).
-- **`trackingKey`**: Defaults to `"notifications:stats"` if not provided.
-- **`loggingEnabled`**: Defaults to `true`.
-
----
-
-## 🚀 Starting the Worker Independently (On a Separate Server)
-
-In a distributed system, you may want to **dispatch notifications from one server** and **process them on a different server** (worker server).
-
-The `queue-notifier` allows you to **easily start the worker on a separate instance** to process jobs asynchronously.
-
-### **🔧 Example: Starting the Worker Server**
-
-To start the worker **on a separate instance**, use the `startWorkerServer` function:
+**Example Worker Script (`worker.ts`):**
 
 ```typescript
 import Redis from "ioredis";
 import { startWorkerServer } from "queue-notifier";
+import { PinoLogger } from "pino"; // Import type for callbacks
+import { Job } from "bullmq";
+import path from "path";
 
-// Initialize Redis externally
-const redis = new Redis("redis://localhost:6379");
+console.log("Starting Notification Worker...");
 
-// Start the worker to process jobs from the queue
-startWorkerServer({
-  redisInstance: redis,
-  queueName: "notifications",
-  concurrency: 20, // Adjust based on your system resources
+const redis = new Redis({
+  host: "localhost",
+  port: 6379,
+  maxRetriesPerRequest: null, // REQUIRED for BullMQ
+  enableReadyCheck: false, // Recommended for BullMQ
+});
+
+redis.on("error", (err) => console.error("Worker Redis Error:", err));
+
+// Ensure firebase credentials path is correct
+// const serviceAccountPath = path.join(__dirname, './firebase-service-account.json');
+// const serviceAccount = require(serviceAccountPath);
+// OR directly import if using ESM/TS config setup
+import serviceAccount from "./firebase-service-account.json";
+
+const workerManager = startWorkerServer({
+  redisConnection: redis,
+  queueName: "fcm-notifications", // Listen to the correct queue
+  concurrency: 15,
   notifiers: {
-    telegram: { botToken: process.env.BOT_TOKEN as string },
-    email: {
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: "your-email@gmail.com", pass: "your-password" },
-      from: "your-email@gmail.com",
-    },
-    firebase: { serviceAccount: require("./firebase-service-account.json") },
-    web: {
-      publicKey: "YOUR_PUBLIC_KEY",
-      privateKey: "YOUR_PRIVATE_KEY",
-      contactEmail: "admin@example.com",
-    },
+    // Only configure notifiers this worker should handle
+    firebase: serviceAccount, // Provide credentials
+    // email: { /* ... email config ... */ },
   },
-  // Called whenever a job completes
-  onComplete: async (job, stats) => {
-    console.log(`🔔 Job ${job.id} completed. Stats so far:`, stats);
+  trackingKey: "fcm:stats", // Default tracking key for this worker
+  resetStatsAfterCompletion: false,
+
+  onStart: async (job: Job, logger: PinoLogger) => {
+    logger.info(`Processing started for campaign ${job.data.campaignId}`);
   },
-  // Called when queue is truly empty
-  onDrained: async () => {
-    // Retrieve final stats
-    const finalStats = await getNotificationStats("stressTest:stats");
-    console.log("📊 Final Notification Stats:", finalStats);
-    console.log("✅ Worker done processing all jobs. Shutting down...");
+
+  onComplete: async (
+    job: Job,
+    stats: Record<string, string>,
+    logger: PinoLogger
+  ) => {
+    logger.info(
+      { stats },
+      `Processing complete for campaign ${job.data.campaignId}`
+    );
+    // Maybe send a webhook, update database, etc.
+  },
+
+  onDrained: async (logger: PinoLogger) => {
+    logger.info("Queue is drained. Worker idle.");
+    // Optional: Maybe exit if running as a one-off task?
+    // process.exit(0);
   },
 });
 
-console.log("✅ Worker server started successfully!");
+console.log(`Worker listening on queue: "fcm-notifications"`);
+
+// --- Graceful Shutdown ---
+const gracefulShutdown = async (signal: string) => {
+  console.log(`Received ${signal}. Shutting down worker gracefully...`);
+  try {
+    await workerManager.close();
+    console.log("WorkerManager closed.");
+    // Close Redis connection if appropriate for this process
+    if (redis.status === "ready") {
+      await redis.quit();
+      console.log("Redis connection closed.");
+    }
+  } catch (err) {
+    console.error("Error during shutdown:", err);
+    process.exit(1);
+  }
+  process.exit(0);
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Handle Ctrl+C
 ```
 
-### **🛠️ Configuration Options**
+### 3. Metadata (`NotificationMeta`)
 
-| Option               | Type                                      | Required | Description                                        |
-| -------------------- | ----------------------------------------- | -------- | -------------------------------------------------- |
-| `redisInstance`      | `Redis`                                   | ✅       | External Redis instance used for job queueing      |
-| `queueName`          | `string`                                  | ✅       | The queue name that the worker will listen to      |
-| `concurrency`        | `number`                                  | ❌       | Number of jobs processed in parallel (default: 10) |
-| `notifiers.telegram` | `{ botToken: string }`                    | ❌       | Config for Telegram notifications                  |
-| `notifiers.email`    | `{ host, port, auth, from }`              | ❌       | Config for Email notifications                     |
-| `notifiers.firebase` | `{ serviceAccount: object }`              | ❌       | Firebase push notification config                  |
-| `notifiers.web`      | `{ publicKey, privateKey, contactEmail }` | ❌       | Web push notification config                       |
-| `onComplete`         | `function`                                | ❌       | Called whenever a job completes                    |
-| `onDrained`          | `function`                                | ❌       | Called when queue is truly empty                   |
+When calling `dispatchNotifications`, the `meta` function must return an object matching the structure expected by the target `channelName`. The SDK uses TypeScript generics and the `NotificationMeta` interface (defined in `NotificationChannel.ts`) to help enforce this.
 
-### **📌 Notes**
+```typescript
+// Defined within the SDK (src/jobs/channels/NotificationChannel.ts)
+export interface EmailMeta {
+  subject: string;
+  text?: string;
+  html?: string /* ... */;
+}
+export interface FirebaseMeta {
+  title?: string;
+  body?: string;
+  data?: { [key: string]: string } /* ... */;
+}
+export interface TelegramMeta {
+  text: string;
+  parse_mode?: "HTML" | "MarkdownV2" /* ... */;
+}
+export interface WebPushMeta {
+  title: string;
+  body: string /* ... */;
+}
 
-- The worker **must run on a separate server instance** for better scalability.
-- Redis must be **shared across all instances** to synchronize job processing.
-- You can **start multiple worker instances** to increase processing power.
+export interface NotificationMeta {
+  email: EmailMeta;
+  firebase: FirebaseMeta;
+  telegram: TelegramMeta;
+  web: WebPushMeta;
+}
+```
+
+Your `meta: (user) => ({ ... })` function should return the correct corresponding type (e.g., `FirebaseMeta` if `channelName` is `'firebase'`).
 
 ---
 
-## 📌 Simulation Manager
+## Advanced Features
 
-The `SimulationManager` enables or disables the simulation mode dynamically. Simulation mode allows your worker to process notification jobs without actually sending notifications—perfect for testing scenarios and avoiding accidental messages to users.
+### Campaign Cancellation
 
-### Usage
+You can stop workers from processing jobs belonging to a specific campaign _after_ they have been dispatched.
 
-To enable simulation mode dynamically:
+1.  **Dispatch with `campaignId`:** When calling `dispatchNotifications`, provide a unique `campaignId` string.
+    ```typescript
+    dispatchNotifications({
+      // ...
+      campaignId: "promo-xyz-123",
+      // ...
+    });
+    ```
+2.  **Set Redis Flag:** To cancel processing for this campaign, use any Redis client to set a specific key. The key format is `worker:cancel:campaign:<campaignId>`.
+    ```typescript
+    // Example using ioredis client elsewhere
+    const redis = new Redis(/* ... */);
+    const campaignToCancel = "promo-xyz-123";
+    await redis.set(
+      `worker:cancel:campaign:${campaignToCancel}`,
+      "true",
+      "EX",
+      3600
+    ); // Set flag to 'true', optionally expire after 1 hour
+    await redis.quit();
+    ```
+3.  **Worker Behavior:** Workers checking the queue will see this flag _before_ processing a job with that `campaignId` and will skip processing it (marking the job as complete without sending notifications).
+4.  **Clear Flag:** Remember to `DEL` the Redis key when you want jobs for that campaign to resume processing normally.
 
-```typescript
-import { SimulationManager } from "queue-notifier";
+### Response Tracking Utilities
 
-// Enable simulation mode
-await SimulationManager.enableSimulation();
-
-// Check simulation status
-const isSimulating = await SimulationManager.isSimulationEnabled();
-console.log(`Simulation mode: ${isSimulating}`);
-
-// Disable simulation mode
-await SimulationManager.disableSimulation();
-```
-
----
-
-## 📊 Response Trackers
-
-Track responses and notification outcomes effectively with built-in tracking utilities:
-
-### Get Notification Stats
-
-Retrieve the current statistics for notifications sent (successes and failures):
-
-```typescript
-import { getNotificationStats } from "queue-notifier";
-
-const stats = await getNotificationStats();
-console.log("Notification stats:", stats);
-```
-
-**Default Redis Key:** `notifications:stats`
-
-You can specify a custom tracking key if desired:
+If `trackResponses` is enabled, use these functions (typically outside the SDK core flow, e.g., in monitoring scripts or admin panels) to view or manage stats. They require a Redis instance and the logger.
 
 ```typescript
-const stats = await getNotificationStats("custom:tracking:key");
+import Redis from "ioredis";
+import { getNotificationStats, resetNotificationStats } from "queue-notifier";
+import { loggerFactory } from "queue-notifier"; // Assuming factory is exported
+
+const redis = new Redis({ maxRetriesPerRequest: null }); // Use compatible instance
+const logger = loggerFactory.createLogger({ component: "StatsUtil" });
+const myTrackingKey = "fcm:stats"; // Or the default 'notifications:stats'
+
+async function checkStats() {
+  const stats = await getNotificationStats(redis, myTrackingKey, logger);
+  console.log(`Stats for ${myTrackingKey}:`, stats);
+  // Output example: { success: '1500', 'error:messaging/invalid-registration-token': '25', 'error:TIMEOUT': '3' }
+
+  // Optional: Reset stats
+  // await resetNotificationStats(redis, myTrackingKey, logger);
+  // console.log(`Stats reset for ${myTrackingKey}`);
+
+  await redis.quit();
+}
+
+checkStats();
 ```
 
-### Reset Notification Stats
+### Logging Configuration
 
-Clear existing notification statistics:
+Logging uses `pino` for structured JSON output.
 
-```typescript
-import { resetNotificationStats } from "queue-notifier";
-
-await resetNotificationStats();
-// OR using custom tracking key
-await resetNotificationStats("custom:tracking:key");
-```
-
-After reset, the stats tracking restarts cleanly from zero.
+- **Level:** Control verbosity via the `LOG_LEVEL` environment variable (e.g., `LOG_LEVEL=debug`) or programmatically:
+  ```typescript
+  import { loggerFactory } from "queue-notifier";
+  loggerFactory.setLevel("trace"); // Set level for all SDK loggers
+  ```
+  Levels: `fatal`, `error`, `warn`, `info` (default), `debug`, `trace`.
+- **Pretty Printing (Dev):** Install `pino-pretty` (`npm i --save-dev pino-pretty`) and run your worker like:
+  `NODE_ENV=development node dist/worker.js | pino-pretty`
 
 ---
 
@@ -439,6 +364,6 @@ MIT License © 2024
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Feel free to check the [issues page](https://github.com/abdiu34567/queue-notifier/issues).
+Contributions, issues, and feature requests are welcome.
 
 ---

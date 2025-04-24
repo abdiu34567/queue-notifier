@@ -20,7 +20,7 @@ describe("RateLimiter", () => {
       new RateLimiter(10, 1000);
       expect(Bottleneck).toHaveBeenCalledWith({
         maxConcurrent: 10,
-        minTime: 100, // 1000ms / 10 = 100ms per request
+        minTime: 100,
       });
     });
 

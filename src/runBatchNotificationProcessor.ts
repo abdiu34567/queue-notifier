@@ -1,21 +1,19 @@
-import Redis from "ioredis";
-import { RedisClient } from "./utils/RedisClient";
+import Redis, { RedisOptions } from "ioredis";
 import { processInBatches, retryWithBackoff } from "./core/BatchProcessor";
 import { QueueManager } from "./core/QueueManager";
-import { WorkerManager } from "./core/WorkerManager";
-import { FirebaseNotifier } from "./jobs/channels/FirebaseNotifier";
-import { TelegramNotifier } from "./jobs/channels/TelegramNotifier";
-import { EmailNotifier } from "./jobs/channels/EmailNotifier";
-import { WebPushNotifier } from "./jobs/channels/WebPushNotifier";
-import { NotifierRegistry } from "./core/NotifierRegistry";
-import Logger from "./utils/Logger";
+import { loggerFactory } from "./utils/LoggerFactory";
 import {
   NotificationChannel,
   NotificationMeta,
   RequiredMeta,
 } from "./jobs/channels/NotificationChannel";
 import { TokenBucketRateLimiter } from "./core/RateLimiter";
-import { WorkerConfig } from "./utils/StartWorkerServer";
+import { JobsOptions } from "bullmq";
+import { ensureRedisInstance } from "./utils/RedisHandler";
+
+const dispatchLogger = loggerFactory.createLogger({
+  component: "DispatchNotifications",
+});
 
 /**
  * Configuration options for running batch notifications.
@@ -28,27 +26,18 @@ export interface DispatchNotificationOptions<
   N extends keyof NotificationMeta
 > {
   /**
-   * The Redis instance to be used for queueing and processing notifications.
-   * This must be externally initialized and passed to ensure efficient connection reuse.
+   * Redis connection configuration.
+   * Provide either an existing ioredis instance or connection options
+   * (e.g., { host: 'localhost', port: 6379 }).
+   * If options are provided, a new connection will be established.
    */
-  redisInstance: Redis;
+  redisConnection: Redis | RedisOptions;
 
   /**
    * The notification channel to be used for sending messages.
    * Available options: "firebase", "telegram", "email", "web".
    */
-  //   notifierType: keyof NotificationMeta;
-  notifierType: N;
-
-  /**
-   * Configuration options specific to the chosen notifier.
-   * Example:
-   *  - For Firebase: `{ serviceAccount: {...} }`
-   *  - For Email: `{ host: "smtp.example.com", auth: { user: "...", pass: "..." } }`
-   *  - For Telegram: `{ botToken: "123456:ABC-DEF" }`
-   *  - For Web Push: `{ publicKey: "...", privateKey: "...", contactEmail: "admin@example.com" }`
-   */
-  notifierOptions: any;
+  channelName: N;
 
   /**
    * A function to query the database for records that need notifications.
@@ -106,19 +95,6 @@ export interface DispatchNotificationOptions<
   maxQueriesPerSecond?: number;
 
   /**
-   * Whether to automatically start a worker to process queued notifications.
-   * If `true`, a worker will be created to process jobs from the queue.
-   * If `false`, the user must manually start a worker elsewhere.
-   * Default: `false`.
-   */
-  startWorker?: boolean;
-
-  /**
-   * Worker-specific configuration options.
-   */
-  workerConfig?: Omit<WorkerConfig, "queueName">;
-
-  /**
    * Whether to track responses from notification APIs (e.g., success/fail reasons).
    * If `true`, responses will be stored in Redis for analytics/debugging.
    * If `false`, responses will not be stored.
@@ -145,77 +121,171 @@ export interface DispatchNotificationOptions<
   customNotifier?: NotificationChannel;
 
   /**
-   * Optional delay (in milliseconds) before the notification job is processed.
-   * For example, to schedule the job to run one week later, set this to 604800000 (7 * 24 * 60 * 60 * 1000).
+   * Optional identifier for a specific campaign or broadcast instance.
+   * If provided, this ID can be used to cancel all jobs associated with
+   * this specific campaign instance via a Redis flag.
+   * Example: "summer-promo-2024"
    */
-  jobDelay?: number;
+  campaignId?: string;
+
+  /**
+   * Optional BullMQ job options to control job behavior,
+   * especially retry strategies for workers.
+   * Example: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } }
+   * These will be merged with default options like delay, removeOnComplete.
+   */
+  jobOptions?: JobsOptions;
+
+  /** Max retries for the enqueue operation itself */
+  enqueueRetries?: number;
+
+  /** Initial delay (ms) for enqueue retries */
+  enqueueBaseDelay?: number;
 }
 
 export async function dispatchNotifications<
   T,
   N extends keyof NotificationMeta
 >(options: DispatchNotificationOptions<T, N>): Promise<void> {
-  // 1. Initialize Redis externally.
-  RedisClient.setInstance(options.redisInstance);
-
-  // 2. Configure Logger
-  Logger.enableLogging(options.loggingEnabled ?? true); // Default: logging is ON
-
-  // 3. Setup notifier instance
-  const notifier =
-    options.customNotifier ??
-    ((): NotificationChannel => {
-      switch (options.notifierType) {
-        case "firebase":
-          return new FirebaseNotifier(options.notifierOptions);
-        case "telegram":
-          return new TelegramNotifier(options.notifierOptions);
-        case "email":
-          return new EmailNotifier(options.notifierOptions);
-        case "web":
-          return new WebPushNotifier(options.notifierOptions);
-        default:
-          throw new Error("Unsupported notifier type");
-      }
-    })();
-
-  // 4. Register the notifier before enqueueing jobs
-  NotifierRegistry.register(options.notifierType, notifier);
-
-  const rateLimiter = options.maxQueriesPerSecond
-    ? new TokenBucketRateLimiter(options.maxQueriesPerSecond)
-    : null;
-
-  // 5. Process records in batches until no more results.
-  await processInBatches<T>(
-    async (offset, limit) => {
-      if (rateLimiter) {
-        await rateLimiter.acquire(); // Apply rate limiting
-      }
-      return await retryWithBackoff(() => options.dbQuery(offset, limit));
-    },
-    async (records: T[]) => {
-      const userIds = records.map(options.mapRecordToUserId);
-      await QueueManager.enqueueJob(options.queueName, options.jobName, {
-        userIds,
-        channel: options.notifierType,
-        meta: records.map((record) => options.meta(record)),
-        trackResponses: options.trackResponses,
-        trackingKey: options.trackingKey || "notifications:stats",
-        delay: options.jobDelay,
-      });
-    },
+  dispatchLogger.info(
     {
-      batchSize: options.batchSize,
-      maxQueriesPerSecond: options.maxQueriesPerSecond,
-    }
+      queue: options.queueName,
+      jobName: options.jobName,
+      channel: options.channelName,
+      campaignId: options.campaignId,
+    },
+    "Dispatch process starting..."
   );
 
-  // 6. Optionally start worker using provided configurations
-  if (options.startWorker) {
-    new WorkerManager({
-      queueName: options.queueName,
-      ...(options.workerConfig || {}),
-    });
+  let redisInstance: Redis;
+  try {
+    redisInstance = ensureRedisInstance(
+      options.redisConnection,
+      dispatchLogger
+    );
+  } catch (error: any) {
+    dispatchLogger.error(
+      { err: error },
+      `Failed to initialize Redis connection.`
+    );
+    throw new Error(`Failed to initialize Redis: ${error.message}`);
+  }
+
+  const rateLimiter = options.maxQueriesPerSecond
+    ? new TokenBucketRateLimiter(options.maxQueriesPerSecond, dispatchLogger)
+    : null;
+
+  // Define the retry parameters for enqueueing, using options or defaults, Default to 3 retries
+  const enqueueMaxRetries = options.enqueueRetries ?? 3;
+  const enqueueRetryBaseDelay = options.enqueueBaseDelay ?? 200;
+
+  let totalRecordsProcessed = 0;
+  try {
+    await processInBatches<T>(
+      async (offset, limit) => {
+        if (rateLimiter) {
+          await rateLimiter.acquire();
+        }
+        return await retryWithBackoff(
+          () => options.dbQuery(offset, limit),
+          dispatchLogger,
+          "DatabaseQuery"
+        );
+      },
+      async (records: T[]) => {
+        if (records.length === 0) {
+          dispatchLogger.trace(
+            "Received empty batch from database, skipping enqueue."
+          );
+          return;
+        }
+
+        totalRecordsProcessed += records.length;
+
+        const userIds = records.map(options.mapRecordToUserId);
+        const jobPayload = {
+          userIds,
+          channel: options.channelName,
+          meta: records.map((record) => {
+            try {
+              return options.meta(record);
+            } catch (metaError: any) {
+              dispatchLogger.error(
+                { err: metaError, record },
+                `Error generating meta for record`
+              );
+              return {};
+            }
+          }),
+          trackResponses: options.trackResponses,
+          trackingKey: options.trackingKey || "notifications:stats",
+          campaignId: options.campaignId,
+        };
+
+        const finalJobOptions: JobsOptions = {
+          removeOnComplete: true,
+          removeOnFail: false,
+
+          ...(options.jobOptions || {}),
+        };
+
+        try {
+          await retryWithBackoff(
+            async () => {
+              await QueueManager.enqueueJob(
+                redisInstance,
+                options.queueName,
+                options.jobName,
+                jobPayload,
+                dispatchLogger,
+                finalJobOptions
+              );
+            },
+            dispatchLogger,
+            "EnqueueJobBatch",
+            enqueueMaxRetries,
+            enqueueRetryBaseDelay
+          );
+        } catch (enqueueError) {
+          throw enqueueError;
+        }
+      },
+      dispatchLogger,
+      {
+        batchSize: options.batchSize,
+      }
+    );
+  } catch (error) {
+    throw error;
+  } finally {
+    if (!(options.redisConnection instanceof Redis)) {
+      dispatchLogger.debug(
+        { status: redisInstance.status },
+        "Checking status of internally created Redis connection for cleanup."
+      );
+      if (
+        redisInstance.status === "ready" ||
+        redisInstance.status === "connecting"
+      ) {
+        try {
+          await redisInstance.quit();
+          dispatchLogger.info("Internally created Redis connection closed.");
+        } catch (quitError) {
+          dispatchLogger.warn(
+            { err: quitError },
+            "Error attempting to quit internally created Redis connection."
+          );
+        }
+      } else {
+        dispatchLogger.debug(
+          "Internally created Redis connection not in quittable state, skipping quit."
+        );
+      }
+    } else {
+      dispatchLogger.debug(
+        "External Redis connection provided, skipping cleanup."
+      );
+    }
+    dispatchLogger.info("Dispatch process finished."); // Final log
   }
 }

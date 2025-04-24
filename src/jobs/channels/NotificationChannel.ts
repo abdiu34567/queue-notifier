@@ -22,15 +22,109 @@ import {
   ReplyParameters,
 } from "telegraf/typings/core/types/typegram";
 import { ContentEncoding, HttpsProxyAgentOptions, Urgency } from "web-push";
-import https = require("https");
+import { Message } from "firebase-admin/lib/messaging/messaging-api";
+
+import { Logger as PinoLogger } from "pino";
+import { messaging } from "firebase-admin";
 
 export interface NotificationChannel {
+  /**
+   * Sends the notification.
+   * @param recipients Array of recipient identifiers.
+   * @param meta Metadata specific to the channel.
+   * @param logger A PinoLogger instance for contextual logging. // <-- Document param
+   * @returns Promise resolving to an array of results.
+   */
   send(
-    userIds: string[],
-    meta?: Record<string, any>
-  ): Promise<
-    { status: string; recipient: string; response?: any; error?: string }[]
-  >;
+    recipients: string[],
+    meta: any,
+    logger: PinoLogger
+  ): Promise<NotificationResult[]>;
+}
+
+export interface EmailMeta {
+  subject: string;
+  text?: string;
+  html?: string;
+  attachments?: any[];
+}
+export interface NotificationResult {
+  status: "success" | "error";
+  recipient: string;
+  response?: any;
+  error?: string;
+}
+
+// --- Specific Meta Type Definitions ---
+
+/**
+ * Metadata structure specifically for Firebase (FCM) notifications.
+ * Allows defining standard notification fields, data payloads,
+ * and platform-specific overrides.
+ */
+export interface FirebaseMeta {
+  /** Optional top-level title, used if notification object is not provided */
+  title?: string;
+  /** Optional top-level body, used if notification object is not provided */
+  body?: string;
+
+  /**
+   * The main notification content (title, body, image).
+   * See: https://firebase.google.com/docs/reference/admin/node/firebase-admin.messaging.notification
+   */
+  notification?: messaging.Notification; // Use the official type
+
+  /**
+   * Custom key-value data payload. All values must be strings.
+   * See: https://firebase.google.com/docs/cloud-messaging/concept-options#data_messages
+   */
+  data?: { [key: string]: string };
+
+  /**
+   * Android-specific configuration overrides.
+   * See: https://firebase.google.com/docs/reference/admin/node/firebase-admin.messaging.androidconfig
+   */
+  android?: messaging.AndroidConfig;
+
+  /**
+   * Apple Push Notification Service (APNs)-specific configuration overrides.
+   * See: https://firebase.google.com/docs/reference/admin/node/firebase-admin.messaging.apnsconfig
+   */
+  apns?: messaging.ApnsConfig;
+
+  /**
+   * Web push-specific configuration overrides.
+   * See: https://firebase.google.com/docs/reference/admin/node/firebase-admin.messaging.webpushconfig
+   */
+  webpush?: messaging.WebpushConfig;
+
+  /**
+   * Platform-independent options for FCM messages.
+   * See: https://firebase.google.com/docs/reference/admin/node/firebase-admin.messaging.fcmoptions
+   */
+  fcmOptions?: messaging.FcmOptions;
+}
+
+// --- Other Meta Types ---
+export interface EmailMeta {
+  subject: string;
+  text?: string;
+  html?: string;
+  attachments?: any[];
+}
+export interface TelegramMeta extends ExtraReplyMessage {
+  text: string;
+  parse_mode?: "HTML" | "MarkdownV2";
+}
+export interface WebPushMeta {
+  title: string;
+  body: string;
+  icon?: string;
+  image?: string;
+  badge?: string;
+  data?: any;
+  TTL?: number;
+  headers?: Record<string, string>;
 }
 
 export type ExtraReplyMessage = {
@@ -91,8 +185,13 @@ export interface MailOptions {
 export interface FirebaseNotificationOptions {
   title?: string;
   body?: string;
-  data?: Record<string, string>;
-  dryRun?: boolean; // Enable dry-run testing mode
+  data?: { [key: string]: string };
+
+  notification?: Message["notification"];
+  android?: Message["android"];
+  apns?: Message["apns"];
+  webpush?: Message["webpush"];
+  fcmOptions?: Message["fcmOptions"];
 }
 
 export interface RequestOptions {
@@ -111,7 +210,6 @@ export interface RequestOptions {
   urgency?: Urgency | undefined;
   topic?: string | undefined;
   proxy?: string | HttpsProxyAgentOptions | undefined;
-  agent?: https.Agent | undefined;
 }
 
 export interface WebPush extends RequestOptions {
